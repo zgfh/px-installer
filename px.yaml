@@ -1,0 +1,74 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: portworx
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - pods
+  - namespaces
+  - nodes
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - extensions
+  verbs:
+  - get
+  - list
+  - watch
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portworx
+  namespace: kube-system
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+  name: portworx
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: portworx
+subjects:
+- kind: ServiceAccount
+  name: portworx
+  namespace: kube-system
+---
+apiVersion: extensions/v1beta1
+kind: DaemonSet
+metadata:
+  name: portworx
+  namespace: kube-system
+spec:
+  template:
+    metadata:
+      labels:
+        name: portworx
+    spec:
+      hostNetwork: true
+      hostPID: true
+      containers:
+        - name: portworx
+          image: portworx/px-installer
+          command:
+            - /docker-entry-point.sh
+          livenessProbe:
+            initialDelaySeconds: 30
+            httpGet:
+              host: 127.0.0.1
+              path: /status
+              port: 9001
+          securityContext:
+            privileged: true
+          volumeMounts:
+            - name: /var/run/
+              mountPath: /var/run
+          resources:
+            requests:
+              cpu: 10m
+      restartPolicy: Always
