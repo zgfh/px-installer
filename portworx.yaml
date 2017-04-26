@@ -58,7 +58,7 @@ spec:
         - name: portworx
           image: gourao/px-installer
           command:
-            - /px-installer
+            - /portworx-mon
           args:
             ["-k", "etcd://etcd-us-east-1b.portworx.com:4001", "-c", "k8s-03", "-s", "/dev/xvdc"]
           livenessProbe:
