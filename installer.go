@@ -96,8 +96,10 @@ func upgrade(args []string) error {
 			"/etc/pwx:/etc/pwx",
 			"/opt/pwx/bin:/export_bin:shared",
 			"/var/run/docker.sock:/var/run/docker.sock",
+			"/var/lib/kubelet:/var/lib/kubelet:shared",
 			"/var/cores:/var/cores",
 			"/usr/src:/usr/src",
+			"/lib/modules:/lib/modules",
 		},
 	}
 
@@ -124,10 +126,11 @@ func upgrade(args []string) error {
 		return nil
 	}
 
-	fmt.Println("Install Done.")
+	fmt.Println("Install Done.  Portworx monitor running.")
 	return nil
 }
 
 func main() {
 	upgrade(os.Args[1:])
+	select {}
 }

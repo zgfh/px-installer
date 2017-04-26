@@ -2,6 +2,6 @@ FROM ubuntu:14.04
 
 WORKDIR /
 
-COPY ./px-installer /
-ENTRYPOINT ["/px-installer"]
+COPY ./portworx-mon /
+ENTRYPOINT ["/portworx-mon"]
 CMD []

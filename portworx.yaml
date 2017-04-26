@@ -15,6 +15,8 @@ rules:
   - watch
 - apiGroups:
   - extensions
+  resources:
+  - networkpolicies
   verbs:
   - get
   - list
@@ -54,9 +56,11 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/px-installer
+          image: gourao/px-installer
           command:
             - /px-installer
+          args:
+            ["-k", "etcd://etcd-us-east-1b.portworx.com:4001", "-c", "k8s-03", "-s", "/dev/xvdc"]
           livenessProbe:
             initialDelaySeconds: 30
             httpGet:
@@ -66,9 +70,13 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
-            - name: /var/run/
+            - name: varrun
               mountPath: /var/run
           resources:
             requests:
               cpu: 10m
       restartPolicy: Always
+      volumes:
+      - name: varrun
+        hostPath:
+          path: /var/run
