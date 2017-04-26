@@ -11,7 +11,7 @@ import (
 	dockerclient "github.com/fsouza/go-dockerclient"
 )
 
-func upgrade(clusterId string) error {
+func upgrade(args []string) error {
 	tag := "latest"
 	image := "portworx/px-enterprise"
 
@@ -103,9 +103,7 @@ func upgrade(clusterId string) error {
 
 	config := dockerclient.Config{
 		Image: image + ":" + tag,
-		Cmd: []string{
-			"-daemon",
-		},
+		Cmd:   args,
 	}
 
 	co := dockerclient.CreateContainerOptions{
@@ -131,5 +129,5 @@ func upgrade(clusterId string) error {
 }
 
 func main() {
-	upgrade("blah")
+	upgrade(os.Args[1:])
 }

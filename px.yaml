@@ -56,7 +56,7 @@ spec:
         - name: portworx
           image: portworx/px-installer
           command:
-            - /docker-entry-point.sh
+            - /px-installer
           livenessProbe:
             initialDelaySeconds: 30
             httpGet:
