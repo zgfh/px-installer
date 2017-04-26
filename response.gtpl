@@ -27,7 +27,7 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/px-installer
+          image: portworx/monitor
           command:
             - /portworx-mon
           args:
