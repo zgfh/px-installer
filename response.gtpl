@@ -31,7 +31,7 @@ spec:
           command:
             - /portworx-mon
           args:
-            ["-k", "{{.etcd}}", "-c", "{{.cluster}}", "-a", "-f"]
+            ["-k", "{{.etcd}}", "-c", "{{.cluster}}", "-a", "-f", "-z"]
           livenessProbe:
             initialDelaySeconds: 30
             httpGet:
