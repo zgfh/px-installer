@@ -1,17 +1,29 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1beta1
+metadata:
+   name: node-list-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["list"]
+
 ---
+
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1beta1
 metadata:
-  name: portworx
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: portworx
+  name: node-list-binding
 subjects:
 - kind: ServiceAccount
-  name: portworx
+  name: persistent-volume-binder
   namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: node-list-role
+  apiGroup: rbac.authorization.k8s.io
+
 ---
+
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
@@ -31,9 +43,9 @@ spec:
           command:
             - /portworx-mon
           args:
-            ["-k", "{{.etcd}}", "-c", "{{.cluster}}", "-a", "-f", "-z"]
+            ["-k", "{{.etcd}}", "-c", "{{.cluster}}", "-a", "-f", "-x", "kubernetes"]
           livenessProbe:
-            initialDelaySeconds: 30
+            initialDelaySeconds: 180
             httpGet:
               host: 127.0.0.1
               path: /status
@@ -41,6 +53,8 @@ spec:
           securityContext:
             privileged: true
           volumeMounts:
+            - name: hostroot
+              mountPath: /media/host
             - name: varrun
               mountPath: /var/run
           resources:
@@ -48,6 +62,9 @@ spec:
               cpu: 10m
       restartPolicy: Always
       volumes:
-      - name: varrun
-        hostPath:
-          path: /var/run
+        - name: hostroot
+          hostPath:
+            path: /
+        - name: varrun
+          hostPath:
+            path: /var/run
