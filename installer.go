@@ -9,7 +9,23 @@ import (
 	"time"
 
 	dockerclient "github.com/fsouza/go-dockerclient"
+	"os/exec"
 )
+
+func enableSharedMounts() error {
+	cmd := exec.Command("nsenter", "--mount=/media/host/proc/1/ns/mnt", "--", "mount", "--make-shared", "/")
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+	if err != nil {
+		fmt.Printf("Failed to enable shared mounts. Err: %v Stderr: %v\n", err, stderr)
+		return err
+	}
+
+	fmt.Println("Enabled shared mounts succesfully")
+	return nil
+}
 
 func upgrade(args []string) error {
 	tag := "latest"
@@ -19,14 +35,14 @@ func upgrade(args []string) error {
 	if err != nil {
 		fmt.Println("Could not connect to Docker... is Docker running on this host? ",
 			err.Error())
-		return nil
+		return err
 	}
 
 	err = docker.Ping()
 	if err != nil {
 		fmt.Println("Could not connect to Docker... is Docker running on this host? ",
 			err.Error())
-		return nil
+		return err
 	}
 
 	fmt.Println("Downloading Portworx...")
@@ -34,6 +50,7 @@ func upgrade(args []string) error {
 	origStdout := os.Stdout
 	rPipe, wPipe, err := os.Pipe()
 	if err != nil {
+		fmt.Printf("Failed to get os Pipe. Err: %v", err)
 		return err
 	}
 
@@ -47,9 +64,10 @@ func upgrade(args []string) error {
 	}()
 
 	po := dockerclient.PullImageOptions{
-		Repository:   image,
-		Tag:          tag,
-		OutputStream: os.Stdout,
+		Repository:        image,
+		Tag:               tag,
+		OutputStream:      os.Stdout,
+		InactivityTimeout: 180 * time.Second,
 	}
 
 	regUser := os.Getenv("REGISTRY_USER")
@@ -59,7 +77,7 @@ func upgrade(args []string) error {
 		Password: regPass,
 	}); err != nil {
 		fmt.Println("Could not connect to Docker... is Docker running on this host?")
-		return nil
+		return err
 	}
 
 	// Back to normal state.
@@ -116,14 +134,14 @@ func upgrade(args []string) error {
 	if err != nil {
 		fmt.Println("Warning, could not create the Portworx container: ",
 			err.Error())
-		return nil
+		return err
 	}
 
 	err = docker.StartContainer(con.ID, &hostConfig)
 	if err != nil {
 		fmt.Println("Warning, could not start the Portworx container: ",
 			err.Error())
-		return nil
+		return err
 	}
 
 	fmt.Println("Install Done.  Portworx monitor running.")
@@ -131,6 +149,13 @@ func upgrade(args []string) error {
 }
 
 func main() {
-	upgrade(os.Args[1:])
+	enableSharedMounts()
+
+	err := upgrade(os.Args[1:])
+	if err != nil {
+		fmt.Println("Failed to start px container. Err: ", err)
+		return
+	}
+
 	select {}
 }
