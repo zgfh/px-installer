@@ -39,13 +39,17 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/monitor
+          image: harshpx/monitor
           command:
-            - /portworx-mon
+            - /px-mon
           args:
-            ["-k", "{{.etcd}}", "-c", "{{.cluster}}", "-a", "-f", "-x", "kubernetes"]
+             ["{{if .Etcd}}-k {{.Etcd}}{{end}}",
+              "{{if .Cluster}}-c {{.Cluster}}{{end}}",
+              "{{if .DIface}}-d {{.DIface}}{{end}}",
+              "{{if .MIface}}-m {{.MIface}}{{end}}",
+              "{{if .Drive}}-s {{.Drive}}{{end}}", "-a", "-f", "-x", "kubernetes"]
           livenessProbe:
-            initialDelaySeconds: 180
+            initialDelaySeconds: 600
             httpGet:
               host: 127.0.0.1
               path: /status

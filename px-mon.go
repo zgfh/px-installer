@@ -67,7 +67,7 @@ func upgrade(args []string) error {
 		Repository:        image,
 		Tag:               tag,
 		OutputStream:      os.Stdout,
-		InactivityTimeout: 180 * time.Second,
+		InactivityTimeout: 720 * time.Second,
 	}
 
 	regUser := os.Getenv("REGISTRY_USER")

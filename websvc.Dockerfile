@@ -2,8 +2,8 @@ FROM ubuntu
 
 WORKDIR /
 
-COPY ./response.gtpl /
-COPY ./portworx-mon-websvc /
+COPY ./k8s-px-spec-response.gtpl /
+COPY ./px-mon-websvc /
 EXPOSE 8080
-ENTRYPOINT ["/portworx-mon-websvc"]
+ENTRYPOINT ["/px-mon-websvc"]
 CMD []

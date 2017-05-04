@@ -1,16 +1,19 @@
-all: clean
-	go build -o portworx-mon installer.go
-	go build -o portworx-mon-websvc websvc.go
-	@echo "Building container: docker build --tag $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_IMAGE):$(DOCKER_HUB_TAG) ."
-	sudo docker build --tag $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_IMAGE):$(DOCKER_HUB_TAG) .
+MONITOR_IMG=$(DOCKER_HUB_MONITOR_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(DOCKER_HUB_TAG)
+MONITOR_WEBSVC_IMG=$(DOCKER_HUB_MONITOR_REPO)/$(DOCKER_HUB_MONITOR_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
 
-	@echo "Building container: docker build --tag $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_WEBSVC_IMAGE):$(DOCKER_HUB_TAG) ."
-	sudo docker build --tag $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_WEBSVC_IMAGE):$(DOCKER_HUB_TAG) -f websvc.Dockerfile .
+all: clean
+	go build -o px-mon px-mon.go
+	go build -o px-mon-websvc px-mon-websvc.go
+	@echo "Building container: docker build --tag $(MONITOR_IMG) ."
+	sudo docker build --tag $(MONITOR_IMG) .
+
+	@echo "Building container: docker build --tag $(MONITOR_WEBSVC_IMG) ."
+	sudo docker build --tag $(MONITOR_WEBSVC_IMG) -f websvc.Dockerfile .
 
 deploy: all
-	docker push $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_IMAGE):$(DOCKER_HUB_TAG)
-	docker push $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
+	docker push $(MONITOR_IMG)
+	docker push $(MONITOR_WEBSVC_IMG)
 
 clean:
-	-docker rmi -f $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_IMAGE):$(DOCKER_HUB_TAG)
-	-docker rmi -f $(DOCKER_HUB_INSTALLER_REPO)/$(DOCKER_HUB_INSTALLER_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
+	-docker rmi -f $(MONITOR_IMG)
+	-docker rmi -f $(MONITOR_WEBSVC_IMG)
