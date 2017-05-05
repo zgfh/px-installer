@@ -10,7 +10,107 @@ import (
 
 	dockerclient "github.com/fsouza/go-dockerclient"
 	"os/exec"
+	s "os/signal"
+	"syscall"
 )
+
+const (
+	pxImage    = "portworx/px-enterprise"
+	pxImageTag = "latest"
+	pxContainerName = "portworx"
+)
+
+func SignalHandlers(handlers map[os.Signal]func()) {
+	c := make(chan os.Signal, 1)
+
+	for sig := range handlers {
+		s.Notify(c, sig)
+	}
+
+	go func() {
+		for sig := range c {
+			go func(sig os.Signal) {
+				if hdler, ok := handlers[sig]; ok {
+					fmt.Printf("calling signal handler '%v'\n", handlers[sig])
+					hdler()
+				} else {
+					fmt.Printf("signal: %v - no signal handler function.\n", sig)
+				}
+			}(sig)
+		}
+	}()
+}
+
+func handlerSigTerm() {
+	docker, err := getDockerClient()
+	if err != nil || docker == nil {
+		fmt.Printf("Failed to get docker client. Err: %v\n", err)
+		return
+	}
+
+	cList, err := getPxContainers(docker)
+	if err != nil {
+		fmt.Errorf("Failed to list containers. Err: %v\n", err)
+		return
+	}
+
+	for _, c := range cList {
+		fmt.Printf("Stopping px container: %v (%v)\n", c.Names, c.ID)
+		err = docker.StopContainer(c.ID, 30)
+		if err != nil {
+			fmt.Printf("Failed to stop px container. Err: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Stopped px container: %v (%v) succesfully\n", c.Names, c.ID)
+	}
+}
+
+func handlerSigKill() {
+	docker, err := getDockerClient()
+	if err != nil || docker == nil {
+		fmt.Printf("Failed to get docker client. Err: %v\n", err)
+		return
+	}
+
+	cList, err := getPxContainers(docker)
+	if err != nil {
+		fmt.Errorf("Failed to list containers. Err: %v\n", err)
+		return
+	}
+
+	for _, c := range cList {
+		fmt.Printf("Killing px container: %v (%v)\n", c.Names, c.ID)
+		opts := dockerclient.KillContainerOptions{ID: c.ID}
+		err = docker.KillContainer(opts)
+		if err != nil {
+			fmt.Printf("Failed to kill px container. Err: %v\n", err)
+			continue
+		}
+		fmt.Printf("Killing px container: %v (%v) succesfully\n", c.Names, c.ID)
+	}
+
+	os.Exit(0)
+}
+
+func getPxContainers(docker *dockerclient.Client) ([]dockerclient.APIContainers, error) {
+	filters := make(map[string][]string)
+	filters["ancestor"] = append(filters["ancestor"], pxImage+":"+pxImageTag)
+
+	lo := dockerclient.ListContainersOptions{
+		All:     true,
+		Size:    false,
+		Filters: filters,
+	}
+
+	cList, err := docker.ListContainers(lo)
+	if err != nil {
+		fmt.Errorf("Failed to list containers. Err: %v\n", err)
+		return nil, err
+	}
+
+	return cList, nil
+}
 
 func enableSharedMounts() error {
 	cmd := exec.Command("nsenter", "--mount=/media/host/proc/1/ns/mnt", "--", "mount", "--make-shared", "/")
@@ -27,22 +127,47 @@ func enableSharedMounts() error {
 	return nil
 }
 
-func upgrade(args []string) error {
-	tag := "latest"
-	image := "portworx/px-enterprise"
-
+func getDockerClient() (*dockerclient.Client, error) {
 	docker, err := dockerclient.NewClient("unix:///var/run/docker.sock")
 	if err != nil {
 		fmt.Println("Could not connect to Docker... is Docker running on this host? ",
 			err.Error())
-		return err
+		return nil, err
 	}
 
 	err = docker.Ping()
 	if err != nil {
 		fmt.Println("Could not connect to Docker... is Docker running on this host? ",
 			err.Error())
+		return nil, err
+	}
+
+	return docker, nil
+}
+
+func install(args []string) error {
+	docker, err := getDockerClient()
+	if err != nil || docker == nil {
+		fmt.Printf("Failed to get docker client. Err: %v\n", err)
 		return err
+	}
+
+	cList, err := getPxContainers(docker)
+	if err != nil {
+		fmt.Errorf("Failed to list containers. Err: %v\n", err)
+		return err
+	}
+
+	for _, c := range cList { // what do to with multiple existing containers?
+		fmt.Printf("Found existing px container: %v (%v)\n", c.Names, c.ID)
+		// Currently just starting the existing container and returning
+		err = docker.StartContainer(c.ID, nil)
+		if err != nil {
+			fmt.Println("Could not start existing Portworx container: ", err.Error())
+			return err
+		}
+
+		return nil
 	}
 
 	fmt.Println("Downloading Portworx...")
@@ -64,8 +189,8 @@ func upgrade(args []string) error {
 	}()
 
 	po := dockerclient.PullImageOptions{
-		Repository:        image,
-		Tag:               tag,
+		Repository:        pxImage,
+		Tag:               pxImageTag,
 		OutputStream:      os.Stdout,
 		InactivityTimeout: 720 * time.Second,
 	}
@@ -101,7 +226,7 @@ func upgrade(args []string) error {
 
 	hostConfig := dockerclient.HostConfig{
 		RestartPolicy: dockerclient.RestartPolicy{
-			Name:              "always",
+			Name:              "unless-stopped",
 			MaximumRetryCount: 0,
 		},
 		NetworkMode: "host",
@@ -122,12 +247,12 @@ func upgrade(args []string) error {
 	}
 
 	config := dockerclient.Config{
-		Image: image + ":" + tag,
+		Image: pxImage + ":" + pxImageTag,
 		Cmd:   args,
 	}
 
 	co := dockerclient.CreateContainerOptions{
-		Name:       "portworx",
+		Name:       pxContainerName,
 		Config:     &config,
 		HostConfig: &hostConfig}
 	con, err := docker.CreateContainer(co)
@@ -149,9 +274,14 @@ func upgrade(args []string) error {
 }
 
 func main() {
+	handlersMap := make(map[os.Signal]func())
+	handlersMap[syscall.SIGTERM] = handlerSigTerm // docker stop
+	handlersMap[syscall.SIGKILL] = handlerSigKill // docker rm -f
+	SignalHandlers(handlersMap)
+
 	enableSharedMounts()
 
-	err := upgrade(os.Args[1:])
+	err := install(os.Args[1:])
 	if err != nil {
 		fmt.Println("Failed to start px container. Err: ", err)
 		return
