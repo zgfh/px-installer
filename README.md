@@ -28,14 +28,27 @@ This compiles the px monitor and px web service source code, creates a container
 # Usage
 
 ### Kubernetes
-On kubernetes, we deploy the px-mon as a DaemonSet.
 
+Portworx needs to run on the kubernetes master node (_This requirement will be removed soon_). To allow that, run the following command.
+```
+kubectl taint nodes --all node-role.kubernetes.io/master-
+```
+
+Now deploy Portworx.
 ```
 kubectl create -f "http://35.185.236.78?cluster=mycluster&etcd=etcd://etcd.fake.net:4001"
-
-# To specify data and management interfaces (optional)
- kubectl create -f "http://35.185.236.78?cluster=mycluster&etcd=etcd://etcd.fake.net:4001&diface=enp0s8&miface=enp0s8"
 ```
-The above command fetches the YAML spec from Monitor web service and gives it to kubectl to create the DaemonSet.
-* The YAML spec has the image of px-mon
-* Note how we give custom parameters which are specific to our setup.
+Above command fetches the YAML spec from the web service and gives it to kubectl to create a Portworx monitor DaemonSet.
+* This monitor ensures Portworx is running and maintains it's lifecycle
+* The YAML spec declares details of the px-mon (image, parameters etc)
+* Note how we give custom parameters which are specific to each setup.
+
+
+Examples including optional parameters
+```
+# To specify data and management interfaces
+ kubectl create -f "http://35.185.236.78?cluster=mycluster&etcd=etcd://etcd.fake.net:4001&diface=enp0s8&miface=enp0s8"
+
+# To specify drive
+ kubectl create -f "http://35.185.236.78?cluster=mycluster&etcd=etcd://etcd.fake.net:4001&drive=/dev/sdb"
+```

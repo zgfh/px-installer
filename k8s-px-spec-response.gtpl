@@ -39,7 +39,7 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: harshpx/monitor
+          image: portworx/monitor
           command:
             - /px-mon
           args:
