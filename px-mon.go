@@ -160,6 +160,11 @@ func install(args []string) error {
 
 	for _, c := range cList { // what do to with multiple existing containers?
 		fmt.Printf("Found existing px container: %v (%v)\n", c.Names, c.ID)
+		if c.State == "running" {
+			fmt.Printf("px container: %v (%v) is already running.\n", c.Names, c.ID)
+			return nil
+		}
+
 		// Currently just starting the existing container and returning
 		err = docker.StartContainer(c.ID, nil)
 		if err != nil {
