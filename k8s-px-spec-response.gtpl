@@ -49,7 +49,7 @@ spec:
               "{{if .MIface}}-m {{.MIface}}{{end}}",
               "{{if .Drive}}-s {{.Drive}}{{end}}", "-a", "-f", "-x", "kubernetes"]
           livenessProbe:
-            initialDelaySeconds: 600
+            initialDelaySeconds: 840
             httpGet:
               host: 127.0.0.1
               path: /status

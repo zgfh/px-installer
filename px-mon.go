@@ -198,7 +198,7 @@ func install(args []string) error {
 		Repository:        pxImage,
 		Tag:               pxImageTag,
 		OutputStream:      os.Stdout,
-		InactivityTimeout: 720 * time.Second,
+		InactivityTimeout: 840 * time.Second,
 	}
 
 	regUser := os.Getenv("REGISTRY_USER")
