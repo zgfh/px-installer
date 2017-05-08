@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	s "os/signal"
 	"syscall"
+	"regexp"
 )
 
 const (
@@ -229,6 +230,18 @@ func install(args []string) error {
 
 	fmt.Println("Starting Portworx...")
 
+	dInfo, err := docker.Info()
+	if err != nil {
+		fmt.Printf("Failed to get docker info. Err: %v\n", err)
+		return err
+	}
+
+	hdrs := "/usr/src"
+	matched, _ := regexp.MatchString(".*coreos.*", dInfo.KernelVersion)
+	if matched {
+		hdrs = "/lib/modules"
+	}
+
 	hostConfig := dockerclient.HostConfig{
 		RestartPolicy: dockerclient.RestartPolicy{
 			Name:              "unless-stopped",
@@ -246,8 +259,7 @@ func install(args []string) error {
 			"/var/run/docker.sock:/var/run/docker.sock",
 			"/var/lib/kubelet:/var/lib/kubelet:shared",
 			"/var/cores:/var/cores",
-			"/usr/src:/usr/src",
-			"/lib/modules:/lib/modules",
+			hdrs + ":" + hdrs,
 		},
 	}
 
