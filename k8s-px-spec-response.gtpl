@@ -1,29 +1,3 @@
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1beta1
-metadata:
-   name: node-list-role
-rules:
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["list"]
-
----
-
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1beta1
-metadata:
-  name: node-list-binding
-subjects:
-- kind: ServiceAccount
-  name: persistent-volume-binder
-  namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: node-list-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
@@ -40,6 +14,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/monitor
+          imagePullPolicy: Always
           command:
             - /px-mon
           args:

@@ -64,6 +64,16 @@ func handlerSigTerm() {
 		}
 
 		fmt.Printf("Stopped px container: %v (%v) succesfully\n", c.Names, c.ID)
+
+		fmt.Printf("Removing px container: %v (%v)\n", c.Names, c.ID)
+		opts := dockerclient.RemoveContainerOptions{ID : c.ID}
+		err = docker.RemoveContainer(opts)
+		if err != nil {
+			fmt.Printf("Failed to remove px container. Err: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Removed px container: %v (%v) succesfully\n", c.Names, c.ID)
 	}
 }
 
@@ -89,6 +99,16 @@ func handlerSigKill() {
 			continue
 		}
 		fmt.Printf("Killing px container: %v (%v) succesfully\n", c.Names, c.ID)
+
+		fmt.Printf("Removing px container: %v (%v)\n", c.Names, c.ID)
+		rmOpts := dockerclient.RemoveContainerOptions{ID : c.ID, Force: true}
+		err = docker.RemoveContainer(rmOpts)
+		if err != nil {
+			fmt.Printf("Failed to remove px container. Err: %v\n", err)
+			continue
+		}
+
+		fmt.Printf("Removed px container: %v (%v) succesfully\n", c.Names, c.ID)
 	}
 
 	os.Exit(0)
@@ -159,21 +179,19 @@ func install(args []string) error {
 		return err
 	}
 
-	for _, c := range cList { // what do to with multiple existing containers?
+	for _, c := range cList {
 		fmt.Printf("Found existing px container: %v (%v)\n", c.Names, c.ID)
 		if c.State == "running" {
 			fmt.Printf("px container: %v (%v) is already running.\n", c.Names, c.ID)
 			return nil
 		}
 
-		// Currently just starting the existing container and returning
-		err = docker.StartContainer(c.ID, nil)
+		opts := dockerclient.RemoveContainerOptions{ID : c.ID}
+		err = docker.RemoveContainer(opts)
 		if err != nil {
-			fmt.Println("Could not start existing Portworx container: ", err.Error())
+			fmt.Println("Could not remove existing Portworx container: ", err.Error())
 			return err
 		}
-
-		return nil
 	}
 
 	fmt.Println("Downloading Portworx...")
