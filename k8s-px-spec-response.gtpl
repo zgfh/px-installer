@@ -9,7 +9,6 @@ spec:
       labels:
         name: portworx
     spec:
-      hostNetwork: true
       hostPID: true
       containers:
         - name: portworx
