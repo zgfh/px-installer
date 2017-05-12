@@ -35,7 +35,7 @@ spec:
             - name: hostroot
               mountPath: /media/host
             - name: varrun
-              mountPath: /var/run
+              mountPath: /var/run/docker.sock
           resources:
             requests:
               cpu: 10m
@@ -46,4 +46,4 @@ spec:
             path: /
         - name: varrun
           hostPath:
-            path: /var/run
+            path: /var/run/docker.sock
