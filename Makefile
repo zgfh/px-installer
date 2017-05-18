@@ -2,8 +2,8 @@ MONITOR_IMG=$(DOCKER_HUB_MONITOR_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(DOCKER_HUB_
 MONITOR_WEBSVC_IMG=$(DOCKER_HUB_MONITOR_REPO)/$(DOCKER_HUB_MONITOR_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
 
 all: clean
-	go build -o px-mon px-mon.go
-	go build -o px-mon-websvc px-mon-websvc.go
+	go build -o px-init px-init.go
+	go build -o px-spec-websvc px-spec-websvc.go
 	@echo "Building container: docker build --tag $(MONITOR_IMG) ."
 	sudo docker build --tag $(MONITOR_IMG) .
 
