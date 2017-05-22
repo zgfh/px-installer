@@ -3,9 +3,9 @@ MONITOR_IMG=$(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(DOCKER_HUB_
 WEBSVC_IMG=$(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
 
 all: clean
-	go build -o px-init/px-init.out px-init/px-init.go
-	go build -o px-mon/px-mon.out px-mon/px-mon.go
-	go build -o px-spec-websvc/px-spec-websvc.out px-spec-websvc/px-spec-websvc.go
+	go build -o px-init/px-init px-init/px-init.go
+	go build -o px-mon/px-mon px-mon/px-mon.go
+	go build -o px-spec-websvc/px-spec-websvc px-spec-websvc/px-spec-websvc.go
 
 	@echo "Building container: docker build --tag $(PXINIT_IMG) -f px-init/Dockerfile ."
 	sudo docker build --tag $(PXINIT_IMG) -f px-init/Dockerfile px-init
@@ -22,9 +22,9 @@ deploy: all
 	docker push $(WEBSVC_IMG)
 
 clean:
-	-rm -rf px-init/px-init.out
-	-rm -rf px-mon/px-mon.out
-	-rm -rf px-spec-websvc/px-spec-websvc.out
+	-rm -rf px-init/px-init
+	-rm -rf px-mon/px-mon
+	-rm -rf px-spec-websvc/px-spec-websvc
 	-docker rmi -f $(PXINIT_IMG)
 	-docker rmi -f $(MONITOR_IMG)
 	-docker rmi -f $(WEBSVC_IMG)

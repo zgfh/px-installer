@@ -1,4 +1,4 @@
-package px_mon
+package main
 
 import (
 	"bytes"

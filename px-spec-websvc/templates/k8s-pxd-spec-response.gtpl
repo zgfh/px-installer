@@ -41,7 +41,6 @@ spec:
     - protocol: TCP
       port: 9001
       targetPort: 9001
-      nodePort: 30001
   type: NodePort
 
 ---

@@ -1,4 +1,4 @@
-package px_init
+package main
 
 import (
 	"bytes"

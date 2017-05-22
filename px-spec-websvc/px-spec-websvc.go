@@ -1,4 +1,4 @@
-package px_spec_websvc
+package main
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 )
 
 type Params struct {
-	Etcd       string
+	Kvdb       string
 	Cluster    string
 	DIface     string
 	MIface     string
@@ -26,7 +26,7 @@ type Params struct {
 	Env        string
 }
 
-func generate(templateFile, etcd, cluster, dataIface, mgmtIface, drives, zeroStorage, force, etcdPasswd,
+func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroStorage, force, etcdPasswd,
 	etcdCa, etcdCert, etcdKey, acltoken, token, env string) string {
 
 	cwd, _ := os.Getwd()
@@ -70,7 +70,7 @@ func generate(templateFile, etcd, cluster, dataIface, mgmtIface, drives, zeroSto
 
 	params := Params{
 		Cluster:    cluster,
-		Etcd:       etcd,
+		Kvdb:       kvdb,
 		DIface:     dataIface,
 		MIface:     mgmtIface,
 		Drives:     drives,
@@ -95,28 +95,8 @@ func generate(templateFile, etcd, cluster, dataIface, mgmtIface, drives, zeroSto
 }
 
 func main() {
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		etcd := r.URL.Query().Get("etcd")
-		cluster := r.URL.Query().Get("cluster")
-		dataIface := r.URL.Query().Get("diface")
-		mgmtIface := r.URL.Query().Get("miface")
-		drives := r.URL.Query().Get("drives")
-		zeroStorage := r.URL.Query().Get("zeroStorage")
-		force := r.URL.Query().Get("force")
-		etcdPasswd := r.URL.Query().Get("etcdPasswd")
-		etcdCa := r.URL.Query().Get("etcdCa")
-		etcdCert := r.URL.Query().Get("etcdCert")
-		etcdKey := r.URL.Query().Get("etcdKey")
-		acltoken := r.URL.Query().Get("acltoken")
-		token := r.URL.Query().Get("token")
-		env := r.URL.Query().Get("env")
-
-		fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", etcd, cluster, dataIface, mgmtIface,
-			drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env))
-	})
-
 	http.HandleFunc("/swarm", func(w http.ResponseWriter, r *http.Request) {
-		etcd := r.URL.Query().Get("etcd")
+		kvdb := r.URL.Query().Get("kvdb")
 		cluster := r.URL.Query().Get("cluster")
 		dataIface := r.URL.Query().Get("diface")
 		mgmtIface := r.URL.Query().Get("miface")
@@ -131,9 +111,29 @@ func main() {
 		token := r.URL.Query().Get("token")
 		env := r.URL.Query().Get("env")
 
-		fmt.Fprintf(w, generate("swarm-px-service-spec-response.gtpl", etcd, cluster, dataIface,
+		fmt.Fprintf(w, generate("swarm-px-service-spec-response.gtpl", kvdb, cluster, dataIface,
 			mgmtIface, drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token,
 			env))
+	})
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		kvdb := r.URL.Query().Get("kvdb")
+		cluster := r.URL.Query().Get("cluster")
+		dataIface := r.URL.Query().Get("diface")
+		mgmtIface := r.URL.Query().Get("miface")
+		drives := r.URL.Query().Get("drives")
+		zeroStorage := r.URL.Query().Get("zeroStorage")
+		force := r.URL.Query().Get("force")
+		etcdPasswd := r.URL.Query().Get("etcdPasswd")
+		etcdCa := r.URL.Query().Get("etcdCa")
+		etcdCert := r.URL.Query().Get("etcdCert")
+		etcdKey := r.URL.Query().Get("etcdKey")
+		acltoken := r.URL.Query().Get("acltoken")
+		token := r.URL.Query().Get("token")
+		env := r.URL.Query().Get("env")
+
+		fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
+			drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env))
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))

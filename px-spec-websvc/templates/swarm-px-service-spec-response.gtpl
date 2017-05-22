@@ -2,7 +2,7 @@ version: '3'
 
 services:
   px-monitor:
-    image: harshpx/monitor2
+    image: harshpx/monitor
     volumes:
       - /:/media/host
       - /var/run/docker.sock:/var/run/docker.sock
@@ -15,7 +15,7 @@ services:
         monitor: 60s
         max_failure_ratio: 0.3
     command:
-      ["{{if .Etcd}}-k {{.Etcd}}{{end}}",
+      ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
        "{{if .Cluster}}-c {{.Cluster}}{{end}}",
        "{{if .DIface}}-d {{.DIface}}{{end}}",
        "{{if .MIface}}-m {{.MIface}}{{end}}",
@@ -28,5 +28,3 @@ services:
        "{{if .Token}}-t {{.Token}}{{end}}",
        "{{if .Env}}{{.Env}}{{end}}",
        "-x", "swarm"]
-    restart: always
-    privileged: true
