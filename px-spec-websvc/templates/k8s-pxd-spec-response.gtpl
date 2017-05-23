@@ -51,6 +51,11 @@ metadata:
   name: portworx
   namespace: kube-system
 spec:
+  minReadySeconds: 0
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
   template:
     metadata:
       labels:
@@ -63,7 +68,7 @@ spec:
           image: portworx/px-enterprise:latest
           imagePullPolicy: Always
           args:
-             ["{{if .Etcd}}-k {{.Etcd}}{{end}}",
+             ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
               "{{if .Cluster}}-c {{.Cluster}}{{end}}",
               "{{if .DIface}}-d {{.DIface}}{{end}}",
               "{{if .MIface}}-m {{.MIface}}{{end}}",
@@ -78,6 +83,12 @@ spec:
               "-x", "kubernetes"]
           livenessProbe:
             initialDelaySeconds: 840 # allow image pull in slow networks
+            httpGet:
+              host: 127.0.0.1
+              path: /status
+              port: 9001
+          readinessProbe:
+            periodSeconds: 10
             httpGet:
               host: 127.0.0.1
               path: /status
