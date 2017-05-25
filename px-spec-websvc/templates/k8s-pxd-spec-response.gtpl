@@ -111,7 +111,7 @@ spec:
             - name: kubelet
               mountPath: /var/lib/kubelet:shared
             - name: src
-              mountPath: /usr/src
+              mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
       initContainers:
@@ -148,7 +148,7 @@ spec:
             path: /var/lib/kubelet
         - name: src
           hostPath:
-            path: /usr/src
+            path: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins

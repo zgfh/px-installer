@@ -24,10 +24,11 @@ type Params struct {
 	Acltoken   string
 	Token      string
 	Env        string
+	Coreos     string
 }
 
 func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroStorage, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env string) string {
+	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos string) string {
 
 	cwd, _ := os.Getwd()
 	p := filepath.Join(cwd, templateFile)
@@ -81,6 +82,7 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroSto
 		Acltoken:   acltoken,
 		Token:      token,
 		Env:        env,
+		Coreos:     coreos,
 	}
 
 	var result bytes.Buffer
@@ -95,6 +97,30 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroSto
 }
 
 func main() {
+	// TODO dedup the query gets below
+
+	http.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
+		kvdb := r.URL.Query().Get("kvdb")
+		cluster := r.URL.Query().Get("cluster")
+		dataIface := r.URL.Query().Get("diface")
+		mgmtIface := r.URL.Query().Get("miface")
+		drives := r.URL.Query().Get("drives")
+		zeroStorage := r.URL.Query().Get("zeroStorage")
+		force := r.URL.Query().Get("force")
+		etcdPasswd := r.URL.Query().Get("etcdPasswd")
+		etcdCa := r.URL.Query().Get("etcdCa")
+		etcdCert := r.URL.Query().Get("etcdCert")
+		etcdKey := r.URL.Query().Get("etcdKey")
+		acltoken := r.URL.Query().Get("acltoken")
+		token := r.URL.Query().Get("token")
+		env := r.URL.Query().Get("env")
+		coreos := r.URL.Query().Get("coreos")
+
+		fmt.Fprintf(w, generate("k8s-px-stack-response.gtpl", kvdb, cluster, dataIface,
+			mgmtIface, drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token,
+			env, coreos))
+	})
+
 	http.HandleFunc("/swarm", func(w http.ResponseWriter, r *http.Request) {
 		kvdb := r.URL.Query().Get("kvdb")
 		cluster := r.URL.Query().Get("cluster")
@@ -113,7 +139,7 @@ func main() {
 
 		fmt.Fprintf(w, generate("swarm-px-service-spec-response.gtpl", kvdb, cluster, dataIface,
 			mgmtIface, drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token,
-			env))
+			env, ""))
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -131,9 +157,10 @@ func main() {
 		acltoken := r.URL.Query().Get("acltoken")
 		token := r.URL.Query().Get("token")
 		env := r.URL.Query().Get("env")
+		coreos := r.URL.Query().Get("coreos")
 
 		fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-			drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env))
+			drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))

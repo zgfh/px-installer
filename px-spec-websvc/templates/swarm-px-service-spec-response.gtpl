@@ -11,9 +11,6 @@ services:
       update_config:
         parallelism: 1
         delay: 10s
-        failure_action: continue
-        monitor: 60s
-        max_failure_ratio: 0.3
     command:
       ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
        "{{if .Cluster}}-c {{.Cluster}}{{end}}",
