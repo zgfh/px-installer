@@ -1,50 +1,3 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: px-account
-  namespace: kube-system
----
-kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1alpha1
-metadata:
-   name: node-get-put-list-role
-rules:
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get", "update", "list"]
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1alpha1
-metadata:
-  name: node-role-binding
-subjects:
-- apiVersion: v1
-  kind: ServiceAccount
-  name: px-account
-  namespace: kube-system
-roleRef:
-  kind: ClusterRole
-  name: node-get-put-list-role
-  apiGroup: rbac.authorization.k8s.io
-
----
-
-kind: Service
-apiVersion: v1
-metadata:
-  name: portworx-service
-  namespace: kube-system
-spec:
-  selector:
-    name: portworx
-  ports:
-    - protocol: TCP
-      port: 9001
-      targetPort: 9001
-  type: NodePort
-
----
-
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
@@ -116,7 +69,7 @@ spec:
               mountPath: /run/docker/plugins
       initContainers:
         - name: px-init
-          image: harshpx/monitor
+          image: harshpx/px-init
           securityContext:
             privileged: true
           volumeMounts:

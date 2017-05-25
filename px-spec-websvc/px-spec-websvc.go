@@ -27,7 +27,7 @@ type Params struct {
 	Coreos     string
 }
 
-func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroStorage, force, etcdPasswd,
+func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
 	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos string) string {
 
 	cwd, _ := os.Getwd()
@@ -39,22 +39,18 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroSto
 		return ""
 	}
 
-	if len(zeroStorage) != 0 && zeroStorage == "true" {
-		drives = "-z"
+	drives = strings.Trim(drives, " ")
+	if len(drives) != 0 {
+		var drivesParam string
+		for _, d := range strings.Split(drives, ",") {
+			drivesParam = drivesParam + " -s " + d
+		}
+		drives = drivesParam
 	} else {
-		drives = strings.Trim(drives, " ")
-		if len(drives) != 0 {
-			var drivesParam string
-			for _, d := range strings.Split(drives, ",") {
-				drivesParam = drivesParam + " -s " + d
-			}
-			drives = drivesParam
+		if len(force) != 0 {
+			drives = "-A -f"
 		} else {
-			if len(force) != 0 {
-				drives = "-A -f"
-			} else {
-				drives = "-a -f"
-			}
+			drives = "-a -f"
 		}
 	}
 
@@ -97,51 +93,6 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, zeroSto
 }
 
 func main() {
-	// TODO dedup the query gets below
-
-	http.HandleFunc("/stack", func(w http.ResponseWriter, r *http.Request) {
-		kvdb := r.URL.Query().Get("kvdb")
-		cluster := r.URL.Query().Get("cluster")
-		dataIface := r.URL.Query().Get("diface")
-		mgmtIface := r.URL.Query().Get("miface")
-		drives := r.URL.Query().Get("drives")
-		zeroStorage := r.URL.Query().Get("zeroStorage")
-		force := r.URL.Query().Get("force")
-		etcdPasswd := r.URL.Query().Get("etcdPasswd")
-		etcdCa := r.URL.Query().Get("etcdCa")
-		etcdCert := r.URL.Query().Get("etcdCert")
-		etcdKey := r.URL.Query().Get("etcdKey")
-		acltoken := r.URL.Query().Get("acltoken")
-		token := r.URL.Query().Get("token")
-		env := r.URL.Query().Get("env")
-		coreos := r.URL.Query().Get("coreos")
-
-		fmt.Fprintf(w, generate("k8s-px-stack-response.gtpl", kvdb, cluster, dataIface,
-			mgmtIface, drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token,
-			env, coreos))
-	})
-
-	http.HandleFunc("/swarm", func(w http.ResponseWriter, r *http.Request) {
-		kvdb := r.URL.Query().Get("kvdb")
-		cluster := r.URL.Query().Get("cluster")
-		dataIface := r.URL.Query().Get("diface")
-		mgmtIface := r.URL.Query().Get("miface")
-		drives := r.URL.Query().Get("drives")
-		zeroStorage := r.URL.Query().Get("zeroStorage")
-		force := r.URL.Query().Get("force")
-		etcdPasswd := r.URL.Query().Get("etcdPasswd")
-		etcdCa := r.URL.Query().Get("etcdCa")
-		etcdCert := r.URL.Query().Get("etcdCert")
-		etcdKey := r.URL.Query().Get("etcdKey")
-		acltoken := r.URL.Query().Get("acltoken")
-		token := r.URL.Query().Get("token")
-		env := r.URL.Query().Get("env")
-
-		fmt.Fprintf(w, generate("swarm-px-service-spec-response.gtpl", kvdb, cluster, dataIface,
-			mgmtIface, drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token,
-			env, ""))
-	})
-
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		kvdb := r.URL.Query().Get("kvdb")
 		cluster := r.URL.Query().Get("cluster")
@@ -159,8 +110,13 @@ func main() {
 		env := r.URL.Query().Get("env")
 		coreos := r.URL.Query().Get("coreos")
 
-		fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-			drives, zeroStorage, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
+		if len(zeroStorage) != 0 {
+			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
+		} else {
+			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
+		}
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
