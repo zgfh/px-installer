@@ -18,7 +18,7 @@ import (
 const (
 	pxImage    = "portworx/px-enterprise"
 	pxImageTag = "latest"
-	pxContainerName = "portworx"
+	pxContainerName = "px"
 )
 
 func SignalHandlers(handlers map[os.Signal]func()) {
