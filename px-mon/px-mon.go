@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	pxImage    = "portworx/px-enterprise"
-	pxImageTag = "latest"
+	pxImage    = "portworx/px-base-enterprise"
+	pxImageTag = "1.2.4"
 	pxContainerName = "px"
 )
 
