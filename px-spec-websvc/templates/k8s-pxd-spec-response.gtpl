@@ -100,7 +100,7 @@ spec:
               mountPath: /run/docker/plugins
       initContainers:
         - name: px-init
-          image: harshpx/px-init
+          image: portworx/px-init
           securityContext:
             privileged: true
           volumeMounts:
