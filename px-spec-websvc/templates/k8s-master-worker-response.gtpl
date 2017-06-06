@@ -171,6 +171,13 @@ spec:
         name: portworx
       namespace: kube-system
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node-role.kubernetes.io/master
+                operator: DoesNotExist
       hostNetwork: true
       hostPID: true
       containers:
