@@ -25,10 +25,11 @@ type Params struct {
 	Token      string
 	Env        string
 	Coreos     string
+	Openshift  string
 }
 
 func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos string) string {
+	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift string) string {
 
 	cwd, _ := os.Getwd()
 	p := filepath.Join(cwd, templateFile)
@@ -79,6 +80,7 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		Token:      token,
 		Env:        env,
 		Coreos:     coreos,
+		Openshift:  openshift,
 	}
 
 	var result bytes.Buffer
@@ -93,6 +95,33 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 }
 
 func main() {
+	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
+		kvdb := r.URL.Query().Get("kvdb")
+		cluster := r.URL.Query().Get("cluster")
+		dataIface := r.URL.Query().Get("diface")
+		mgmtIface := r.URL.Query().Get("miface")
+		drives := r.URL.Query().Get("drives")
+		zeroStorage := r.URL.Query().Get("zeroStorage")
+		force := r.URL.Query().Get("force")
+		etcdPasswd := r.URL.Query().Get("etcdPasswd")
+		etcdCa := r.URL.Query().Get("etcdCa")
+		etcdCert := r.URL.Query().Get("etcdCert")
+		etcdKey := r.URL.Query().Get("etcdKey")
+		acltoken := r.URL.Query().Get("acltoken")
+		token := r.URL.Query().Get("token")
+		env := r.URL.Query().Get("env")
+		coreos := r.URL.Query().Get("coreos")
+		openshift := r.URL.Query().Get("openshift")
+
+		if len(zeroStorage) != 0 {
+			fmt.Fprintf(w, generate("k8s-flexvol-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift))
+		} else {
+			fmt.Fprintf(w, generate("k8s-flexvol-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift))
+		}
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		kvdb := r.URL.Query().Get("kvdb")
 		cluster := r.URL.Query().Get("cluster")
@@ -112,10 +141,10 @@ func main() {
 
 		if len(zeroStorage) != 0 {
 			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, ""))
 		} else {
 			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, ""))
 		}
 	})
 
