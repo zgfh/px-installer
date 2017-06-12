@@ -38,6 +38,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/px-enterprise:latest
+          terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
              ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
@@ -88,14 +89,6 @@ spec:
               mountPath: /run/docker/plugins
             - name: flexvol
               mountPath: /export_flexvolume:shared
-      initContainers:
-        - name: px-init
-          image: portworx/px-init
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - name: hostproc
-              mountPath: /media/host/proc
       restartPolicy: Always
       serviceAccountName: px-account
       volumes:
@@ -126,9 +119,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
-        - name: hostproc
-          hostPath:
-            path: /proc
         - name: flexvol
           hostPath:
             path: /usr/libexec/kubernetes/kubelet-plugins/volume/exec/px~flexvolume
@@ -164,6 +154,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/px-enterprise:latest
+          terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
              ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
@@ -244,9 +235,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
-        - name: hostproc
-          hostPath:
-            path: /proc
         - name: flexvol
           hostPath:
             path: /usr/libexec/kubernetes/kubelet-plugins/volume/exec/px~flexvolume

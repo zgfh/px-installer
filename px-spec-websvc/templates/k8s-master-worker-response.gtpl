@@ -63,6 +63,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/px-enterprise:latest
+          terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
              ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
@@ -114,6 +115,7 @@ spec:
       initContainers:
         - name: px-init
           image: portworx/px-init
+          terminationMessagePath: "/tmp/px-init-termination-log"
           securityContext:
             privileged: true
           volumeMounts:
@@ -183,6 +185,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/px-enterprise:latest
+          terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
              ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
@@ -234,6 +237,7 @@ spec:
       initContainers:
         - name: px-init
           image: portworx/px-init
+          terminationMessagePath: "/tmp/px-init-termination-log"
           securityContext:
             privileged: true
           volumeMounts:

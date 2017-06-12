@@ -21,6 +21,7 @@ spec:
       containers:
         - name: portworx
           image: portworx/px-enterprise:latest
+          terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
              ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
