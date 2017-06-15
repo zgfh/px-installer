@@ -20,7 +20,7 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/px-enterprise:latest
+          image: portworx/px-enterprise:1.2.5
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
