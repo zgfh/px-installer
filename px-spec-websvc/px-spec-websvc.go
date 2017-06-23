@@ -58,9 +58,15 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 	if len(env) != 0 {
 		env = strings.Trim(env, " ")
 		if len(env) != 0 {
-			var envParam string
+			var envParam = "env:\n"
 			for _, e := range strings.Split(env, ",") {
-				envParam = envParam + " -e " + e
+				entry := strings.SplitN(e, "=", 2)
+				if len (entry) == 2 {
+					key := entry[0]
+					val := entry[1]
+					envParam = envParam + "           - name: " + key + "\n"
+					envParam = envParam + "             value: " + val + "\n"
+				}
 			}
 			env = envParam
 		}

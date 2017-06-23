@@ -51,9 +51,8 @@ spec:
               "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
               "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
               "{{if .Token}}-t {{.Token}}{{end}}",
-              "{{if .Env}}{{.Env}}{{end}}",
-              "-x", "kubernetes",
-              "-z"]
+              "-x", "kubernetes", "-z"]
+          {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             initialDelaySeconds: 840 # allow image pull in slow networks
             httpGet:
@@ -168,8 +167,8 @@ spec:
               "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
               "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
               "{{if .Token}}-t {{.Token}}{{end}}",
-              "{{if .Env}}{{.Env}}{{end}}",
               "-x", "kubernetes"]
+          {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             initialDelaySeconds: 840 # allow image pull in slow networks
             httpGet:
