@@ -4,7 +4,19 @@ metadata:
   name: px-account
   namespace: kube-system
 ---
-
+kind: Service
+apiVersion: v1
+metadata:
+  name: portworx-service
+  namespace: kube-system
+spec:
+  selector:
+    name: portworx
+  ports:
+    - protocol: TCP
+      port: 9001
+      targetPort: 9001
+---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
 metadata:
