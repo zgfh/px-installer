@@ -50,7 +50,7 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/px-enterprise:1.2.8
+          image: {{.PxImage}}
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
@@ -165,7 +165,7 @@ spec:
       hostPID: true
       containers:
         - name: portworx
-          image: portworx/px-enterprise:1.2.8
+          image: {{.PxImage}}
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
