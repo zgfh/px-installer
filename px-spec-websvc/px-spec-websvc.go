@@ -11,6 +11,10 @@ import (
 	"text/template"
 )
 
+const (
+	currentPxImage = "portworx/px-enterprise:1.2.8"
+)
+
 type Params struct {
 	Kvdb       string
 	Cluster    string
@@ -26,10 +30,11 @@ type Params struct {
 	Env        string
 	Coreos     string
 	Openshift  string
+	PxImage    string
 }
 
 func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift string) string {
+	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage string) string {
 
 	cwd, _ := os.Getwd()
 	p := filepath.Join(cwd, templateFile)
@@ -72,6 +77,9 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		}
 	}
 
+	if pximage == "" {
+		pximage = currentPxImage
+	}
 	params := Params{
 		Cluster:    cluster,
 		Kvdb:       kvdb,
@@ -87,6 +95,7 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		Env:        env,
 		Coreos:     coreos,
 		Openshift:  openshift,
+		PxImage: pximage,
 	}
 
 	var result bytes.Buffer
@@ -118,13 +127,14 @@ func main() {
 		env := r.URL.Query().Get("env")
 		coreos := r.URL.Query().Get("coreos")
 		openshift := r.URL.Query().Get("openshift")
+		pximage := r.URL.Query().Get("pximage")
 
 		if len(zeroStorage) != 0 {
 			fmt.Fprintf(w, generate("k8s-flexvol-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage))
 		} else {
 			fmt.Fprintf(w, generate("k8s-flexvol-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage))
 		}
 	})
 
@@ -144,13 +154,14 @@ func main() {
 		token := r.URL.Query().Get("token")
 		env := r.URL.Query().Get("env")
 		coreos := r.URL.Query().Get("coreos")
+		pximage := r.URL.Query().Get("pximage")
 
 		if len(zeroStorage) != 0 {
 			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, ""))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage))
 		} else {
 			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, ""))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage))
 		}
 	})
 
