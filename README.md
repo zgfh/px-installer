@@ -19,6 +19,7 @@ export DOCKER_HUB_INSTALL_REPO=portworx # or your private docker repo (if you ch
 export DOCKER_HUB_MONITOR_IMAGE=monitor
 export DOCKER_HUB_WEBSVC_IMAGE=monitor-websvc
 export DOCKER_HUB_PXINIT_IMAGE=px-init
+export PX_INSTALLER_DOCKER_HUB_TAG=latest
 ```
 
 Note: If you set `DOCKER_HUB_INSTALL_REPO` to `portworx`, it will update the official image which external customers are using.

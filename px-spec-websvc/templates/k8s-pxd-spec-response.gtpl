@@ -113,7 +113,7 @@ spec:
               mountPath: /run/docker/plugins
       initContainers:
         - name: px-init
-          image: portworx/px-init
+          image: portworx/px-init:1.0.0
           terminationMessagePath: "/tmp/px-init-termination-log"
           securityContext:
             privileged: true
