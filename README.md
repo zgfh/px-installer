@@ -19,20 +19,23 @@ export DOCKER_HUB_INSTALL_REPO=portworx # or your private docker repo (if you ch
 export DOCKER_HUB_MONITOR_IMAGE=monitor
 export DOCKER_HUB_WEBSVC_IMAGE=monitor-websvc
 export DOCKER_HUB_PXINIT_IMAGE=px-init
-export PX_INSTALLER_DOCKER_HUB_TAG=latest
+export PX_INSTALLER_DOCKER_HUB_TAG=1.0.0
 ```
 
 Note: If you set `DOCKER_HUB_INSTALL_REPO` to `portworx`, it will update the official image which external customers are using.
- 
-Compile and push the docker image using following command
-```
-make deploy
-```
 
-This compiles all modules, creates a container for each of them and pushes them to the configured docker respository.
+Compile binaries: `make`
+* This compiles all modules, creates a container for each of them
+
+Compile and push the docker images: `make deploy`
+* This compiles all modules, creates a container for each of them and pushes them to the configured docker respository.
 
 # Usage
 
 ### Kubernetes
 
 Read [Kubernetes install](https://docs.portworx.com/scheduler/kubernetes/install.html) to see how this is used.
+
+### Swarm
+
+Read [Deploy Portworx on Docker Swarm or UCP](https://docs.portworx.com/scheduler/docker/install-px-docker-service.html) to see how this is used.
