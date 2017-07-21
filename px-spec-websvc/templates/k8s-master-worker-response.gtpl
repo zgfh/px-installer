@@ -12,6 +12,9 @@ rules:
 - apiGroups: [""]
   resources: ["nodes"]
   verbs: ["get", "update", "list"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["get", "list"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1alpha1
