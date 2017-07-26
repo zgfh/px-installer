@@ -52,9 +52,7 @@ metadata:
 spec:
   minReadySeconds: 0
   updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
+    type: OnDelete
   template:
     metadata:
       labels:
@@ -177,9 +175,7 @@ metadata:
 spec:
   minReadySeconds: 0
   updateStrategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxUnavailable: 1
+    type: OnDelete
   template:
     metadata:
       labels:
