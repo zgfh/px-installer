@@ -58,6 +58,15 @@ spec:
       labels:
         name: portworx
     spec:
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: px/enabled
+                operator: NotIn
+                values:
+                - "false"
       hostNetwork: true
       hostPID: true
       containers:

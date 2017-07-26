@@ -71,6 +71,10 @@ spec:
             - matchExpressions:
               - key: node-role.kubernetes.io/master
                 operator: Exists
+              - key: px/enabled
+                operator: NotIn
+                values:
+                - "false"
       hostNetwork: true
       hostPID: true
       containers:
@@ -190,6 +194,10 @@ spec:
             - matchExpressions:
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
+              - key: px/enabled
+                operator: NotIn
+                values:
+                - "false"
       hostNetwork: true
       hostPID: true
       containers:
