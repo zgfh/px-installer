@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	currentPxImage = "portworx/px-enterprise:1.2.8"
+	currentPxImage = "portworx/px-enterprise:1.2.9"
 )
 
 type Params struct {
