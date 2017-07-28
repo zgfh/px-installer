@@ -128,15 +128,6 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
-      initContainers:
-        - name: px-init
-          image: portworx/px-init:1.0.0
-          terminationMessagePath: "/tmp/px-init-termination-log"
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - name: hostproc
-              mountPath: /media/host/proc
       restartPolicy: Always
       serviceAccountName: px-account
       volumes:
@@ -167,9 +158,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
-        - name: hostproc
-          hostPath:
-            path: /proc
 ---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
@@ -252,15 +240,6 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
-      initContainers:
-        - name: px-init
-          image: portworx/px-init:1.0.0
-          terminationMessagePath: "/tmp/px-init-termination-log"
-          securityContext:
-            privileged: true
-          volumeMounts:
-            - name: hostproc
-              mountPath: /media/host/proc
       restartPolicy: Always
       serviceAccountName: px-account
       volumes:
@@ -291,6 +270,3 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
-        - name: hostproc
-          hostPath:
-            path: /proc

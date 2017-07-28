@@ -114,9 +114,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
-        - name: hostproc
-          hostPath:
-            path: /proc
         - name: flexvol
           hostPath:
             path: /usr/libexec/kubernetes/kubelet-plugins/volume/exec/px~flexvolume
