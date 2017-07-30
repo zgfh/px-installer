@@ -67,6 +67,10 @@ spec:
                 operator: NotIn
                 values:
                 - "false"
+              {{if .MasterLess}}
+              - key: node-role.kubernetes.io/master
+                operator: DoesNotExist
+              {{end}}
       hostNetwork: true
       hostPID: true
       containers:
@@ -122,9 +126,9 @@ spec:
             - name: dockerplugins
               mountPath: /run/docker/plugins
       restartPolicy: Always
-      tolerations:
+      {{if .MasterLess}}{{else}}tolerations:
       - key: node-role.kubernetes.io/master
-        effect: NoSchedule
+        effect: NoSchedule{{end}}
       serviceAccountName: px-account
       volumes:
         - name: libosd
