@@ -82,9 +82,9 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		pximage = currentPxImage
 	}
 
-	masterless := false
-	if len(master) != 0 && master == "false" {
-		masterless = true
+	masterless := true
+	if len(master) != 0 && master == "true" {
+		masterless = false
 	}
 
 	params := Params{
