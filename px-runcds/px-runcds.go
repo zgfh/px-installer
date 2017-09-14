@@ -1,0 +1,183 @@
+package main
+
+import (
+	"fmt"
+	"github.com/portworx/px-installer/px-runcds/utils"
+	"github.com/sirupsen/logrus"
+	"os"
+	"os/exec"
+	"strings"
+	"syscall"
+)
+
+const (
+	ociInstallerImage  = "zoxpx/px-dev-runc:latest" // TODO: "portworx/px-base-enterprise-oci:latest"
+	ociInstallerName   = "px-oci-installer"
+	mntFileName        = "/host_proc/1/ns/mnt"
+	dockerFileSockName = "/var/run/docker.sock"
+	baseDir            = "/opt/pwx/oci"
+	baseServiceName    = "portworx"
+	baseServiceFileFmt = "/etc/systemd/system/%s.service"
+)
+
+// usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
+func usage(args ...interface{}) {
+	if len(args) > 0 {
+		logrus.Error(args...)
+		fmt.Fprintln(os.Stderr)
+	}
+
+	fmt.Printf(`Usage: %[1]s <install|uninstall> [options]
+
+options:
+   -oci <dir>                Specify OCI directory (dfl: %[2]s)
+   -name <name>              Specify container/service name (dfl: %[3]s)
+   -sysd <file>              Specify SystemD service file (dfl: %[4]s)
+   -v <dir:dir[:shared,ro]>  Specify extra mounts
+   -c                        [REQUIRED] Specifies the cluster ID that this PX instance is to join
+   -k                        [REQUIRED] Points to your key value database, such as an etcd cluster or a consul cluster
+   -s                        [OPTIONAL if -a is used] Specifies the various drives that PX should use for storing the data
+   -d <ethX>                 Specify the data network interface
+   -m <ethX>                 Specify the management network interface
+   -z                        Instructs PX to run in zero storage mode
+   -f                        Instructs PX to use an unmounted drive even if it has a filesystem on it
+   -a                        Instructs PX to use any available, unused and unmounted drives
+   -A                        Instructs PX to use any available, unused and unmounted drives or partitions
+   -x <swarm|kubernetes>     Specify scheduler being used in the environment
+   -token <token>            Portworx lighthouse token for cluster
+
+kvdb-options:
+   -userpwd <user:passwd>    Username and password for ETCD authentication
+   -ca <file>                Specify location of CA file for ETCD authentication
+   -cert <file>              Specify locationof certificate for ETCD authentication
+   -key <file>               Specify location of certificate key for ETCD authentication
+   -acltoken <token>         ACL token value used for Consul authentication
+
+examples:
+   %[1]s install -k etcd://70.0.1.65:2379 -c MY_CLUSTER_ID -s /dev/sdc -d enp0s8 -m enp0s8
+
+`, os.Args[0], baseDir, baseServiceName, fmt.Sprintf(baseServiceFileFmt, baseServiceName))
+	os.Exit(1)
+}
+
+func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) error {
+	fmt.Println("Downloading Portworx...")
+
+	instlr, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
+	if err != nil {
+		usage("Could not 'talk' to Docker" +
+			" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
+	}
+
+	err = instlr.PullImage(imageName)
+	if err != nil {
+		usage("Could not pull the " + imageName +
+			" - have you specified REGISTRY_USER/REGISTRY_PASS env. variables?")
+	}
+
+	err = instlr.RunOnce(imageName, ociInstallerName,
+		[]string{"--upgrade-inplace"}, []string{"/opt/pwx", "/etc/pwx"})
+	if err != nil {
+		usage("Could not install the " + imageName +
+			" - please inspect docker's log, and contact Portworx support.")
+	}
+
+	fmt.Println("Starting Portworx...")
+
+	// Compose startup-line for PX-RunC
+	args := []string{"/usr/bin/nsenter", "--mount=" + mntFileName, "--", "/opt/pwx/bin/px-runc", "install"}
+	args = append(args, cfg.Args[1:]...)
+	for _, vol := range cfg.Mounts {
+		// skip 2 internal mounts, pass on the others
+		if strings.Contains(vol, ":/host_proc/1/ns") || strings.HasSuffix(vol, dockerFileSockName) {
+			continue
+		}
+		args = append(args, "-v", vol)
+	}
+
+	// TODO: Labels?
+	for _, env := range cfg.Env {
+		args = append(args, "-e", env)
+	}
+
+	logrus.Infof("Running %q ...", args)
+	cmd := exec.Command(args[0], args[1:]...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		logrus.WithError(err).Error("Could not install PX-RunC")
+	}
+	os.Stdout.Write(out)
+
+	return err
+}
+
+func validateMounts(mounts ...string) error {
+	var st0, st1 syscall.Stat_t
+
+	if err := syscall.Lstat("/", &st0); err != nil {
+		// improbable, but let's handle it
+		return fmt.Errorf("INTERNAL ERROR - could not stat '/': %s", err)
+	}
+	for _, m := range mounts {
+		err := syscall.Lstat(m, &st1)
+		if err != nil {
+			return fmt.Errorf("File/Directory %s not found (%s) - please mount via 'run -v ...' option", m, err)
+		} else if st0.Dev == st1.Dev {
+			return fmt.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m, err)
+		}
+	}
+	return nil
+}
+
+func doInstall() {
+	pxImage := os.Getenv("PX_IMAGE")
+	if pxImage == "" {
+		pxImage = ociInstallerImage
+	}
+
+	err := validateMounts(mntFileName, dockerFileSockName)
+	if err != nil {
+		usage(err)
+	}
+
+	id, err := utils.GetMyContainerID()
+	if err != nil {
+		logrus.WithError(err).Error("Could not determine my container ID" +
+			" - are you running me inside Docker?")
+		os.Exit(-1)
+	}
+
+	opts, err := utils.ExtractConfig(id)
+	if err != nil {
+		logrus.WithError(err).Error("Could not extract my container's configuration" +
+			" - are you running me inside Docker?")
+		os.Exit(-1)
+	}
+
+	// TODO: Sanity checks for options
+	fmt.Printf("OPTIONS:: %+v\n", opts)
+
+	err = installPxFromOciImage(pxImage, opts)
+	if err != nil {
+		logrus.WithError(err).Error("Could not install PX-RunC content")
+		os.Exit(-1)
+	}
+}
+
+func main() {
+	if len(os.Args) < 2 || (os.Args[1] != "install" && os.Args[1] != "uninstall") {
+		usage("First argument must be <install|uninstall>")
+	}
+
+	switch os.Args[1] {
+	case "install":
+		doInstall()
+	default:
+		usage("Command " + os.Args[1] + " not supported")
+	}
+
+	// CHECKME: Should we always go to sleep, or can we also exit
+	logrus.Infof("%s done - going to sleep", strings.Title(os.Args[1]))
+	err := syscall.Pause()
+	logrus.WithError(err).Error("Could not pause")
+}
