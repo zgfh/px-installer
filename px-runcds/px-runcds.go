@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/portworx/px-installer/px-runcds/utils"
-	"github.com/sirupsen/logrus"
 	"os"
 	"os/exec"
 	"strings"
 	"syscall"
+
+	"github.com/portworx/px-installer/px-runcds/utils"
+	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -60,8 +61,20 @@ examples:
 	os.Exit(1)
 }
 
+func runExternal(name string, params ...string) error {
+	args := make([]string, 0, 4+len(params))
+	args = append(args, "/usr/bin/nsenter", "--mount="+mntFileName, "--", name)
+	args = append(args, params...)
+
+	logrus.Info("> run: ", strings.Join(args[3:], " "))
+	logrus.Debugf(">>> %+v", args)
+	cmd := exec.Command(args[0], args[1:]...)
+	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	return cmd.Run()
+}
+
 func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) error {
-	fmt.Println("Downloading Portworx...")
+	logrus.Info("Downloading Portworx...")
 
 	instlr, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
 	if err != nil {
@@ -82,31 +95,33 @@ func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) e
 			" - please inspect docker's log, and contact Portworx support.")
 	}
 
-	fmt.Println("Starting Portworx...")
+	logrus.Info("Installing Portworx...")
 
 	// Compose startup-line for PX-RunC
-	args := []string{"/usr/bin/nsenter", "--mount=" + mntFileName, "--", "/opt/pwx/bin/px-runc", "install"}
+	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
+	args = append(args, "/opt/pwx/bin/px-runc", "install")
 	args = append(args, cfg.Args[1:]...)
+
+	// Add Mounts
 	for _, vol := range cfg.Mounts {
-		// skip 2 internal mounts, pass on the others
+		// skip 2 internal mounts, pass the others
 		if strings.Contains(vol, ":/host_proc/1/ns") || strings.HasSuffix(vol, dockerFileSockName) {
 			continue
 		}
 		args = append(args, "-v", vol)
 	}
 
-	// TODO: Labels?
+	// Add Environment
 	for _, env := range cfg.Env {
 		args = append(args, "-e", env)
 	}
 
-	logrus.Infof("Running %q ...", args)
-	cmd := exec.Command(args[0], args[1:]...)
-	out, err := cmd.CombinedOutput()
+	// TODO: Add Labels?
+
+	err = runExternal(args[0], args[1:]...)
 	if err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
 	}
-	os.Stdout.Write(out)
 
 	return err
 }
@@ -155,12 +170,54 @@ func doInstall() {
 	}
 
 	// TODO: Sanity checks for options
-	fmt.Printf("OPTIONS:: %+v\n", opts)
+	logrus.Debugf("OPTIONS:: %+v\n", opts)
 
 	err = installPxFromOciImage(pxImage, opts)
 	if err != nil {
-		logrus.WithError(err).Error("Could not install PX-RunC content")
+		logrus.WithError(err).Error("Could not install Portworx service")
 		os.Exit(-1)
+	}
+
+	logrus.Info("Stopping Portworx service (if any)")
+	err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
+	logrus.WithError(err).Debugf("Stopping done")
+
+	logrus.Info("Starting Portworx service")
+	err = runExternal("/bin/sh", "-c",
+		`systemctl daemon-reload && systemctl enable portworx && systemctl start portworx`)
+	if err != nil {
+		logrus.WithError(err).Error("Could not start Portworx service")
+		os.Exit(-1)
+	}
+}
+
+func doUninstall() {
+	logrus.Info("Stopping Portworx service")
+	err := runExternal("/bin/sh", "-c",
+		`systemctl stop portworx`)
+	if err != nil {
+		logrus.WithError(err).Error("Could not stop Portworx service")
+		os.Exit(-1) // NOTE: CRITICAL failure !!
+	}
+
+	logrus.Info("Disabling Portworx service")
+	err = runExternal("/bin/sh", "-c",
+		`systemctl disable portworx`)
+	if err != nil {
+		logrus.WithError(err).Warn("Could not disable Portworx service (continuing)")
+	}
+
+	logrus.Info("Removing Portworx service bind-mount (if any)")
+	err = runExternal("/bin/sh", "-c",
+		fmt.Sprintf(`grep -q ' %[1]s %[1]s ' /proc/self/mountinfo && umount %[1]s`, "/opt/pwx/oci"))
+	if err != nil {
+		logrus.WithError(err).Warn("Could not bind-umount Portworx files (continuing)")
+	}
+
+	logrus.Info("Removing Portworx files")
+	err = runExternal("/bin/rm", "-fr", "/opt/pwx", "/etc/systemd/system/portworx.service")
+	if err != nil {
+		logrus.WithError(err).Warn("Could not remove all Portworx files")
 	}
 }
 
@@ -169,9 +226,15 @@ func main() {
 		usage("First argument must be <install|uninstall>")
 	}
 
+	if (len(os.Args) > 2 && os.Args[2] == "--debug") || os.Getenv("DEBUG") != "" {
+		logrus.SetLevel(logrus.DebugLevel)
+	}
+
 	switch os.Args[1] {
 	case "install":
 		doInstall()
+	case "uninstall":
+		doUninstall()
 	default:
 		usage("Command " + os.Args[1] + " not supported")
 	}

@@ -1,7 +1,12 @@
-DOCKER_IMG	:= portworx/px-runcds
-GO		:= go
-GOENV		:= GOOS=linux GOARCH=amd64
-EXE		:= px-runcds
+GO	:= go
+GOENV	:= GOOS=linux GOARCH=amd64
+EXE	:= px-runcds
+
+#DOCKER_IMG := portworx/px-runcds:latest
+ifndef DOCKER_IMG
+	DOCKER_IMG := $(DOCKER_HUB_REPO)/$(DOCKER_HUB_IMAGE)-runcds:$(DOCKER_HUB_TAG)
+endif
+
 
 .PHONY: all build clean distclean static
 

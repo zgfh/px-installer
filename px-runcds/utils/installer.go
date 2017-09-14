@@ -15,13 +15,14 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+// DockerInstaller is a Docker client specialized for Container installation
 type DockerInstaller struct {
 	auth string
 	ctx  context.Context
 	cli  *client.Client
 }
 
-// NewDockerInstaller creates an instance of the
+// NewDockerInstaller creates an instance of the DockerInstaller
 func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 	auth, ctx := "", context.Background()
 	cli, err := client.NewEnvClient()
