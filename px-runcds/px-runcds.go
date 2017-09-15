@@ -78,20 +78,33 @@ func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) e
 
 	instlr, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
 	if err != nil {
+		logrus.WithError(err).Error("Could not 'talk' to Docker")
 		usage("Could not 'talk' to Docker" +
 			" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
 	}
 
 	err = instlr.PullImage(imageName)
 	if err != nil {
-		usage("Could not pull the " + imageName +
+		logrus.WithError(err).Error("Could not pull ", imageName)
+		usage("Could not pull " + imageName +
 			" - have you specified REGISTRY_USER/REGISTRY_PASS env. variables?")
+	}
+
+	// NOTE: This step is required, if px-runcds does not mount pwx-dirs
+	err = runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx")
+	if err != nil {
+		logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
+		err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
+		if err != nil {
+			return fmt.Errorf("Unable to create pwx directories: %s", err)
+		}
 	}
 
 	err = instlr.RunOnce(imageName, ociInstallerName,
 		[]string{"--upgrade-inplace"}, []string{"/opt/pwx", "/etc/pwx"})
 	if err != nil {
-		usage("Could not install the " + imageName +
+		logrus.WithError(err).Error("Could not install ", imageName)
+		usage("Could not install " + imageName +
 			" - please inspect docker's log, and contact Portworx support.")
 	}
 
