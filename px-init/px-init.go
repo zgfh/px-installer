@@ -13,7 +13,7 @@ func enableSharedMounts() error {
 
 	err := cmd.Run()
 	if err != nil {
-		fmt.Printf("Failed to enable shared mounts. Err: %v Stderr: %v\n", err, stderr)
+		fmt.Printf("Failed to enable shared mounts. Err: %v Stderr: %s\n", err, stderr.String())
 		return err
 	}
 
