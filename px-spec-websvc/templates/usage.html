@@ -6,7 +6,7 @@
     color: white;
     background-color: #37464c;
 }
-input, select, option {
+input[type="text"], select, option {
     background-color: transparent;
     border: 0px solid;
     font-size: 1.1em;
@@ -30,7 +30,7 @@ td input[type="text"] {
 	var s = ""
 	for (var i = 0, el; el = elements[i++];) {
 	    if ( (el.type === "text" && el.value != "") || (el.type === "select-one") ){
-		s += sep + el.name + "=" + el.value
+		s += sep + el.name + "=" + encodeURIComponent(el.value)
 		sep = "&"
 	    } else if (el.type === "checkbox" && el.checked) {
 		s += sep + el.name + "=true"
@@ -47,7 +47,7 @@ td input[type="text"] {
 <img src="https://portworx.com/wp-content/themes/portworx/images/xportworx-logo.png.pagespeed.ic.0Z487a9F2s.png" width="200" height="85">
 <h1><a href="https://docs.portworx.com/scheduler/kubernetes/install.html#install">Portworx configurator</a> form for Kubernetes</h1>
 
-<form id="my-form">
+<form id="my-form" action="/" method="get">
 <table BORDER="1">
 <tr><th>Value</th><th>Description</th></tr>
 <tr><td COLSPAN="2" ALIGN="center"><small>REQUIRED PARAMETERS</small></td></tr>
@@ -126,10 +126,13 @@ td input[type="text"] {
   <td><code>env: </code> Comma-separated list of environment variables that will be exported to portworx.  (example: <var>API_SERVER=http://lighthouse-new.portworx.com</var>)</td>
 <tr>
 </table>
-</form>
 
 <hr>
 <div id="k">&lt;see form above&gt;</div>
+<P>
+<input type="button" value="Refresh" onClick="testSelect(this.form)">
+<input type="submit" value="Submit">
+</form>
 
 </body>
 </html>
