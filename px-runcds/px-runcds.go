@@ -7,8 +7,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/portworx/px-installer/px-runcds/utils"
-	"github.com/sirupsen/logrus"
 )
 
 const (

@@ -8,10 +8,10 @@ import (
 	"os"
 	"regexp"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/net/context"
 )
 
