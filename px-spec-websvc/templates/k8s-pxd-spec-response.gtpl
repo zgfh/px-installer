@@ -29,7 +29,6 @@ roleRef:
   kind: ClusterRole
   name: node-get-put-list-role
   apiGroup: rbac.authorization.k8s.io
-
 ---
 kind: Service
 apiVersion: v1
@@ -52,7 +51,7 @@ metadata:
 spec:
   minReadySeconds: 0
   updateStrategy:
-    type: OnDelete
+    type: {{if .IsRunC}}RollingUpdate{{else}}OnDelete{{end}}
   template:
     metadata:
       labels:
@@ -79,17 +78,18 @@ spec:
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
-             ["{{if .Kvdb}}-k {{.Kvdb}}{{end}}",
-              "{{if .Cluster}}-c {{.Cluster}}{{end}}",
-              "{{if .DIface}}-d {{.DIface}}{{end}}",
-              "{{if .MIface}}-m {{.MIface}}{{end}}",
-              "{{if .Drives}}{{.Drives}}{{end}}",
-              "{{if .EtcdPasswd}}-userpwd {{.EtcdPasswd}}{{end}}",
-              "{{if .EtcdCa}}-ca {{.EtcdCa}}{{end}}",
-              "{{if .EtcdCert}}-cert {{.EtcdCert}}{{end}}",
-              "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
-              "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
-              "{{if .Token}}-t {{.Token}}{{end}}",
+             [{{if .IsRunC}}"install", {{end}}
+              {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
+              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
+              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
+              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
+              {{- if .Drives}}{{.Drives}}{{end}},
+              {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
+              {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
+              {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
+              {{- if .EtcdKey}}"-key", "{{.EtcdKey}}", {{end}}
+              {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
+              {{- if .Token}}"-t", "{{.Token}}",{{end}}
               "-x", "kubernetes"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
@@ -109,6 +109,12 @@ spec:
           volumeMounts:
             - name: dockersock
               mountPath: /var/run/docker.sock
+            - name: kubelet
+              mountPath: /var/lib/kubelet:shared
+            {{- if .IsRunC}}
+            - name: proc1nsmount
+              mountPath: /host_proc/1/ns
+            {{- else}}
             - name: libosd
               mountPath: /var/lib/osd:shared
             - name: dev
@@ -119,18 +125,28 @@ spec:
               mountPath: /export_bin:shared
             - name: cores
               mountPath: /var/cores
-            - name: kubelet
-              mountPath: /var/lib/kubelet:shared
             - name: src
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            {{- end}}
       restartPolicy: Always
       {{if .MasterLess}}{{else}}tolerations:
       - key: node-role.kubernetes.io/master
         effect: NoSchedule{{end}}
       serviceAccountName: px-account
       volumes:
+        - name: dockersock
+          hostPath:
+            path: /var/run/docker.sock
+        - name: kubelet
+          hostPath:
+            path: /var/lib/kubelet
+        {{- if .IsRunC}}
+        - name: proc1nsmount
+          hostPath:
+            path: /proc/1/ns
+        {{- else}}
         - name: libosd
           hostPath:
             path: /var/lib/osd
@@ -146,15 +162,10 @@ spec:
         - name: cores
           hostPath:
             path: /var/cores
-        - name: kubelet
-          hostPath:
-            path: /var/lib/kubelet
         - name: src
           hostPath:
             path: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins
-        - name: dockersock
-          hostPath:
-            path: /var/run/docker.sock
+        {{- end}}

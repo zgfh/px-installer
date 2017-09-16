@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
+
+	"github.com/gorilla/schema"
 )
 
 const (
@@ -16,56 +19,64 @@ const (
 )
 
 type Params struct {
-	Kvdb       string
-	Cluster    string
-	DIface     string
-	MIface     string
-	Drives     string
-	EtcdPasswd string
-	EtcdCa     string
-	EtcdCert   string
-	EtcdKey    string
-	Acltoken   string
-	Token      string
-	Env        string
-	Coreos     string
-	Openshift  string
-	PxImage    string
-	MasterLess bool
+	Cluster     string `schema:"cluster"`
+	Kvdb        string `schema:"kvdb"`
+	Type        string `schema:"type"`
+	Drives      string `schema:"drives"`
+	DIface      string `schema:"diface"`
+	MIface      string `schema:"miface"`
+	Coreos      string `schema:"coreos"`
+	Master      string `schema:"master"`
+	ZeroStorage string `schema:"zeroStorage"`
+	Force       string `schema:"force"`
+	EtcdPasswd  string `schema:"etcdPasswd"`
+	EtcdCa      string `schema:"etcdCa"`
+	EtcdCert    string `schema:"etcdCert"`
+	EtcdKey     string `schema:"etcdKey"`
+	Acltoken    string `schema:"acltoken"`
+	Token       string `schema:"token"`
+	Env         string `schema:"env"`
+	Openshift   string `schema:"openshift"`
+	PxImage     string `schema:"pximage"`
+	MasterLess  bool   `schema:"-"`
+	IsRunC      bool   `schema:"-"`
 }
 
-func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, master string) string {
+func generate(templateFile string, p *Params) (string, error) {
 
 	cwd, _ := os.Getwd()
-	p := filepath.Join(cwd, templateFile)
-
-	t, err := template.ParseFiles(p)
+	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
 	if err != nil {
-		log.Println(err)
-		return ""
+		return "", err
 	}
 
-	drives = strings.Trim(drives, " ")
-	if len(drives) != 0 {
-		var drivesParam string
-		for _, d := range strings.Split(drives, ",") {
-			drivesParam = drivesParam + " -s " + d
+	// Fix drives entry
+	p.Drives = strings.Trim(p.Drives, " ")
+	if len(p.Drives) != 0 {
+		var drivesParam bytes.Buffer
+		sep := ""
+		for _, dev := range strings.Split(p.Drives, ",") {
+			drivesParam.WriteString(sep)
+			drivesParam.WriteString(`"-s", "`)
+			drivesParam.WriteString(dev)
+			drivesParam.WriteByte('"')
+			sep = ", "
 		}
-		drives = drivesParam
+		p.Drives = drivesParam.String()
 	} else {
-		if len(force) != 0 {
-			drives = "-A -f"
+		if len(p.Force) != 0 {
+			p.Drives = `"-A", "-f"`
 		} else {
-			drives = "-a -f"
+			p.Drives = `"-a", "-f"`
 		}
 	}
 
-	if len(env) != 0 {
-		env = strings.Trim(env, " ")
-		if len(env) != 0 {
+	// Pre-format Environment entry
+	if len(p.Env) != 0 {
+		p.Env = strings.Trim(p.Env, " ")
+		if len(p.Env) != 0 {
 			var envParam = "env:\n"
-			for _, e := range strings.Split(env, ",") {
+			for _, e := range strings.Split(p.Env, ",") {
 				entry := strings.SplitN(e, "=", 2)
 				if len(entry) == 2 {
 					key := entry[0]
@@ -74,104 +85,122 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 					envParam = envParam + "             value: " + val + "\n"
 				}
 			}
-			env = envParam
+			p.Env = envParam
 		}
 	}
 
-	if pximage == "" {
-		pximage = currentPxImage
-	}
+	p.IsRunC = (p.Type == "runc")
+	p.MasterLess = (p.Master != "true")
 
-	masterless := true
-	if len(master) != 0 && master == "true" {
-		masterless = false
-	}
-
-	params := Params{
-		Cluster:    cluster,
-		Kvdb:       kvdb,
-		DIface:     dataIface,
-		MIface:     mgmtIface,
-		Drives:     drives,
-		EtcdPasswd: etcdPasswd,
-		EtcdCa:     etcdCa,
-		EtcdCert:   etcdCert,
-		EtcdKey:    etcdKey,
-		Acltoken:   acltoken,
-		Token:      token,
-		Env:        env,
-		Coreos:     coreos,
-		Openshift:  openshift,
-		PxImage:    pximage,
-		MasterLess: masterless,
+	if p.PxImage == "" {
+		// TODO: Change image for RunC
+		p.PxImage = currentPxImage
 	}
 
 	var result bytes.Buffer
-	err = t.Execute(&result, params)
+	err = t.Execute(&result, p)
 	if err != nil {
-		log.Println(err)
+		return "", err
 	}
 
-	s := result.String()
+	return result.String(), nil
+}
 
-	return s
+// parseRequest uses Gorilla schema to process parameters (see http://www.gorillatoolkit.org/pkg/schema)
+func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
+	err := r.ParseForm()
+	if err != nil {
+		return nil, fmt.Errorf("Could not parse form: %s", err)
+	}
+
+	config := new(Params)
+	decoder := schema.NewDecoder()
+
+	if !parseStrict {
+		// skip unknown keys, unless strict parsing
+		decoder.IgnoreUnknownKeys(true)
+	}
+
+	err = decoder.Decode(config, r.Form)
+	if err != nil {
+		return nil, fmt.Errorf("Could not decode form: %s", err)
+	}
+	fmt.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
+	return config, nil
+}
+
+// sendError sends back the "400 BAD REQUEST" to the client
+func sendError(err error, w http.ResponseWriter) {
+	if err == nil {
+		err = fmt.Errorf("Unspecified error")
+	}
+	w.WriteHeader(http.StatusBadRequest)
+	w.Write([]byte(err.Error()))
+}
+
+// sendUsage sends a simple HTML usage-file back to the browser
+func sendUsage(w http.ResponseWriter) {
+	cwd, _ := os.Getwd()
+	f, err := os.Open(filepath.Join(cwd, "usage.html"))
+	if err != nil {
+		sendError(err, w)
+		return
+	}
+	defer f.Close()
+	_, err = io.Copy(w, f)
+	if err != nil {
+		sendError(err, w)
+	}
 }
 
 func main() {
-	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
-		kvdb := r.URL.Query().Get("kvdb")
-		cluster := r.URL.Query().Get("cluster")
-		dataIface := r.URL.Query().Get("diface")
-		mgmtIface := r.URL.Query().Get("miface")
-		drives := r.URL.Query().Get("drives")
-		zeroStorage := r.URL.Query().Get("zeroStorage")
-		force := r.URL.Query().Get("force")
-		etcdPasswd := r.URL.Query().Get("etcdPasswd")
-		etcdCa := r.URL.Query().Get("etcdCa")
-		etcdCert := r.URL.Query().Get("etcdCert")
-		etcdKey := r.URL.Query().Get("etcdKey")
-		acltoken := r.URL.Query().Get("acltoken")
-		token := r.URL.Query().Get("token")
-		env := r.URL.Query().Get("env")
-		coreos := r.URL.Query().Get("coreos")
-		openshift := r.URL.Query().Get("openshift")
-		pximage := r.URL.Query().Get("pximage")
+	parseStrict := len(os.Args) > 1 && os.Args[1] == "-strict"
 
-		if len(zeroStorage) != 0 {
-			fmt.Fprintf(w, generate("k8s-flexvol-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, ""))
-		} else {
-			fmt.Fprintf(w, generate("k8s-flexvol-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, ""))
+	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
+		p, err := parseRequest(r, parseStrict)
+		if err != nil {
+			sendError(err, w)
+			return
 		}
+
+		p.Master = ""
+		template := "k8s-flexvol-pxd-spec-response.gtpl"
+		if len(p.ZeroStorage) != 0 {
+			template = "k8s-flexvol-master-worker-response.gtpl"
+		}
+
+		content, err := generate(template, p)
+		if err != nil {
+			sendError(err, w)
+			return
+		}
+		fmt.Fprintf(w, content)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		kvdb := r.URL.Query().Get("kvdb")
-		cluster := r.URL.Query().Get("cluster")
-		dataIface := r.URL.Query().Get("diface")
-		mgmtIface := r.URL.Query().Get("miface")
-		drives := r.URL.Query().Get("drives")
-		zeroStorage := r.URL.Query().Get("zeroStorage")
-		force := r.URL.Query().Get("force")
-		etcdPasswd := r.URL.Query().Get("etcdPasswd")
-		etcdCa := r.URL.Query().Get("etcdCa")
-		etcdCert := r.URL.Query().Get("etcdCert")
-		etcdKey := r.URL.Query().Get("etcdKey")
-		acltoken := r.URL.Query().Get("acltoken")
-		token := r.URL.Query().Get("token")
-		env := r.URL.Query().Get("env")
-		coreos := r.URL.Query().Get("coreos")
-		pximage := r.URL.Query().Get("pximage")
-		master := r.URL.Query().Get("master")
-
-		if len(zeroStorage) != 0 && ( len(master) == 0 || master == "true" ) {
-			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master))
-		} else {
-			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master))
+		// anything to parse?
+		if r.ContentLength == 0 && len(r.URL.RawQuery) == 0 {
+			sendUsage(w)
+			return
 		}
+
+		p, err := parseRequest(r, parseStrict)
+		if err != nil {
+			sendError(err, w)
+			return
+		}
+
+		template := "k8s-pxd-spec-response.gtpl"
+		if len(p.ZeroStorage) != 0 && (len(p.Master) == 0 || p.Master == "true") {
+			template = "k8s-master-worker-response.gtpl"
+		}
+
+		content, err := generate(template, p)
+		if err != nil {
+			sendError(err, w)
+			return
+		}
+		fmt.Fprintf(w, content)
 	})
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
