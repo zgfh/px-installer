@@ -3,15 +3,6 @@
 
 # VARIABLES
 #
-BUILD_TYPE=static
-ifeq ($(BUILD_TYPE),static)
-    BUILD_OPTIONS += -v -a --ldflags "-extldflags -static"
-else ifeq ($(BUILD_TYPE),debug)
-    BUILD_OPTIONS += -i -v -gcflags "-N -l"
-else
-    BUILD_OPTIONS += -i -v
-endif
-
 ifndef DOCKER_HUB_INSTALL_REPO
     DOCKER_HUB_INSTALL_REPO := portworx
     $(warning DOCKER_HUB_INSTALL_REPO not defined, using '$(DOCKER_HUB_INSTALL_REPO)' instead)
@@ -44,6 +35,16 @@ MONITOR_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(PX_INSTA
 WEBSVC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 RUNC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_RUNC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 
+BUILD_TYPE=static
+ifeq ($(BUILD_TYPE),static)
+    BUILD_OPTIONS += -v -a --ldflags "-extldflags -static"
+    GOENV += CGO_ENABLED=0
+else ifeq ($(BUILD_TYPE),debug)
+    BUILD_OPTIONS += -i -v -gcflags "-N -l"
+else
+    BUILD_OPTIONS += -i -v
+endif
+
 TARGETS += px-init px-mon px-spec-websvc px-runcds
 $(info  $(TARGETS))
 
@@ -58,22 +59,22 @@ all: $(TARGETS)
 
 px-init: px-init/px-init.go
 	@echo "Building $@..."
-	@cd px-init && go build $(BUILD_OPTIONS)
+	@cd px-init && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 	@cd px-init && sudo docker build -t $(PXINIT_IMG) .
 
 px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
 	@echo "Building $@..."
-	@cd px-mon && go build $(BUILD_OPTIONS)
+	@cd px-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 	@cd px-mon && sudo docker build -t $(MONITOR_IMG) .
 
 px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
 	@echo "Building $@..."
-	@cd px-spec-websvc && go build $(BUILD_OPTIONS)
+	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 	@cd px-spec-websvc && sudo docker build -t $(WEBSVC_IMG) .
 
 px-runcds: px-runcds/px-runcds.go vendor/github.com/docker/docker/api
 	@echo "Building $@ binary..."
-	@cd px-runcds && go build $(BUILD_OPTIONS)
+	@cd px-runcds && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 	@cd px-runcds && sudo docker build -t $(RUNC_IMG) .
 
 vendor-pull:
