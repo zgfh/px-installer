@@ -1,4 +1,4 @@
-FROM fedora:25
+FROM alpine:latest
 
 WORKDIR /
 
