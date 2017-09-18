@@ -97,6 +97,7 @@ deploy:
 	docker push $(PXINIT_IMG)
 	docker push $(MONITOR_IMG)
 	docker push $(WEBSVC_IMG)
+	docker push $(RUNC_IMG)
 
 clean:
 	@rm -rf px-init/px-init px-mon/px-mon px-spec-websvc/px-spec-websvc px-runcds/px-runcds
