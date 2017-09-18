@@ -30,6 +30,7 @@ endif
 
 GO		:= go
 GOENV		:= GOOS=linux GOARCH=amd64
+SUDO		:= sudo
 PXINIT_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_PXINIT_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 MONITOR_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 WEBSVC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
@@ -45,6 +46,10 @@ else
     BUILD_OPTIONS += -i -v
 endif
 
+ifeq ($(shell id -u),0)
+    SUDO :=
+endif
+
 TARGETS += px-init px-mon px-spec-websvc px-runcds
 $(info  $(TARGETS))
 
@@ -56,29 +61,32 @@ $(info  $(TARGETS))
 
 all: $(TARGETS)
 
-
 px-init: px-init/px-init.go
 	@echo "Building $@..."
 	@cd px-init && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
-	@cd px-init && sudo docker build -t $(PXINIT_IMG) .
 
 px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
 	@echo "Building $@..."
 	@cd px-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
-	@cd px-mon && sudo docker build -t $(MONITOR_IMG) .
 
 px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
 	@echo "Building $@..."
 	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
-	@cd px-spec-websvc && sudo docker build -t $(WEBSVC_IMG) .
 
 px-runcds: px-runcds/px-runcds.go vendor/github.com/docker/docker/api
 	@echo "Building $@ binary..."
 	@cd px-runcds && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
-	@cd px-runcds && sudo docker build -t $(RUNC_IMG) .
 
-vendor-pull:
+px-container:
+	@cd px-init && $(SUDO) docker build -t $(PXINIT_IMG) .
+	@cd px-mon && $(SUDO) docker build -t $(MONITOR_IMG) .
+	@cd px-spec-websvc && $(SUDO) docker build -t $(WEBSVC_IMG) .
+	@cd px-runcds && $(SUDO) docker build -t $(RUNC_IMG) .
+
+$(GOPATH)/bin/govendor:
 	$(GO) get -v github.com/kardianos/govendor
+
+vendor-pull: $(GOPATH)/bin/govendor
 	$(GOENV) $(GOPATH)/bin/govendor sync
 
 vendor/github.com/fsouza/go-dockerclient: vendor-pull
