@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/template"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/schema"
 )
 
@@ -130,26 +132,39 @@ func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
 }
 
 // sendError sends back the "400 BAD REQUEST" to the client
-func sendError(err error, w http.ResponseWriter) {
-	if err == nil {
-		err = fmt.Errorf("Unspecified error")
+func sendError(code int, err error, w http.ResponseWriter) {
+	e := "Unspecified error"
+	if err != nil {
+		e = err.Error()
 	}
-	w.WriteHeader(http.StatusBadRequest)
-	w.Write([]byte(err.Error()))
+	if code <= 0 {
+		code = http.StatusBadRequest
+	}
+	logrus.Error(e)
+	w.WriteHeader(code)
+	w.Write([]byte(e))
 }
 
 // sendUsage sends a simple HTML usage-file back to the browser
 func sendUsage(w http.ResponseWriter) {
 	cwd, _ := os.Getwd()
-	f, err := os.Open(filepath.Join(cwd, "usage.html"))
+	fname := filepath.Join(cwd, "usage.html")
+	st, err := os.Stat(fname)
 	if err != nil {
-		sendError(err, w)
+		sendError(http.StatusInternalServerError, fmt.Errorf("Could not retrieve usage: %s", err), w)
+		return
+	}
+	w.Header().Set("Content-Length", strconv.FormatInt(st.Size(), 10))
+	w.Header().Set("Content-Type", "text/html")
+	f, err := os.Open(fname)
+	if err != nil {
+		sendError(http.StatusInternalServerError, fmt.Errorf("Could not read usage: %s", err), w)
 		return
 	}
 	defer f.Close()
 	_, err = io.Copy(w, f)
 	if err != nil {
-		sendError(err, w)
+		sendError(http.StatusInternalServerError, fmt.Errorf("Could not send usage: %s", err), w)
 	}
 }
 
@@ -159,7 +174,7 @@ func main() {
 	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
 		p, err := parseRequest(r, parseStrict)
 		if err != nil {
-			sendError(err, w)
+			sendError(http.StatusBadRequest, err, w)
 			return
 		}
 
@@ -171,7 +186,7 @@ func main() {
 
 		content, err := generate(template, p)
 		if err != nil {
-			sendError(err, w)
+			sendError(http.StatusBadRequest, err, w)
 			return
 		}
 		fmt.Fprintf(w, content)
@@ -186,7 +201,7 @@ func main() {
 
 		p, err := parseRequest(r, parseStrict)
 		if err != nil {
-			sendError(err, w)
+			sendError(http.StatusBadRequest, err, w)
 			return
 		}
 
@@ -197,7 +212,7 @@ func main() {
 
 		content, err := generate(template, p)
 		if err != nil {
-			sendError(err, w)
+			sendError(http.StatusBadRequest, err, w)
 			return
 		}
 		fmt.Fprintf(w, content)
