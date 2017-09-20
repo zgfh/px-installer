@@ -94,6 +94,10 @@ vendor/github.com/docker/docker/api: vendor-pull
 vendor/github.com/gorilla/schema: vendor-pull
 
 deploy:
+ifneq ($(DOCKER_HUB_PASSWD),)
+	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
+	docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
+endif
 	docker push $(PXINIT_IMG)
 	docker push $(MONITOR_IMG)
 	docker push $(WEBSVC_IMG)
