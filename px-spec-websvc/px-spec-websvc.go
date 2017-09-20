@@ -18,6 +18,8 @@ import (
 
 const (
 	currentPxImage = "portworx/px-enterprise:1.2.10"
+	// TODO: Change to official image for PX-RunC (once released)
+	currentRunCImage = "zoxpx/px-runcds:ccab5c4"
 )
 
 type Params struct {
@@ -95,8 +97,10 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.MasterLess = (p.Master != "true")
 
 	if p.PxImage == "" {
-		// TODO: Change image for RunC
 		p.PxImage = currentPxImage
+		if p.IsRunC {
+			p.PxImage = currentRunCImage
+		}
 	}
 
 	var result bytes.Buffer

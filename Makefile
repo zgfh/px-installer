@@ -20,11 +20,11 @@ ifndef DOCKER_HUB_WEBSVC_IMAGE
     $(warning DOCKER_HUB_WEBSVC_IMAGE not defined, using '$(DOCKER_HUB_WEBSVC_IMAGE)' instead)
 endif
 ifndef DOCKER_HUB_RUNC_IMAGE
-    DOCKER_HUB_RUNC_IMAGE := monitor-runcds
+    DOCKER_HUB_RUNC_IMAGE := px-runcds
     $(warning DOCKER_HUB_RUNC_IMAGE not defined, using '$(DOCKER_HUB_RUNC_IMAGE)' instead)
 endif
 ifndef PX_INSTALLER_DOCKER_HUB_TAG
-    PX_INSTALLER_DOCKER_HUB_TAG := 1.0.0
+    PX_INSTALLER_DOCKER_HUB_TAG := $(shell git rev-parse HEAD | cut -c-7)
     $(warning PX_INSTALLER_DOCKER_HUB_TAG not defined, using '$(PX_INSTALLER_DOCKER_HUB_TAG)' instead)
 endif
 
