@@ -96,17 +96,18 @@ vendor/github.com/gorilla/schema: vendor-pull
 deploy:
 ifneq ($(DOCKER_HUB_PASSWD),)
 	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
-	docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
+	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
 endif
-	docker push $(PXINIT_IMG)
-	docker push $(MONITOR_IMG)
-	docker push $(WEBSVC_IMG)
-	docker push $(RUNC_IMG)
+	$(SUDO) docker push $(PXINIT_IMG)
+	$(SUDO) docker push $(MONITOR_IMG)
+	$(SUDO) docker push $(WEBSVC_IMG)
+	$(SUDO) docker push $(RUNC_IMG)
+	-$(SUDO) docker logout
 
 clean:
 	@rm -rf px-init/px-init px-mon/px-mon px-spec-websvc/px-spec-websvc px-runcds/px-runcds
-	-docker rmi -f $(PXINIT_IMG) $(MONITOR_IMG) $(WEBSVC_IMG) $(RUNC_IMG)
+	-$(SUDO) docker rmi -f $(PXINIT_IMG) $(MONITOR_IMG) $(WEBSVC_IMG) $(RUNC_IMG)
 
-distclean:	clean
+distclean: clean
 	@rm -fr vendor/github.com vendor/golang.org
 
