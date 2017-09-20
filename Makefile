@@ -7,10 +7,6 @@ ifndef DOCKER_HUB_INSTALL_REPO
     DOCKER_HUB_INSTALL_REPO := portworx
     $(warning DOCKER_HUB_INSTALL_REPO not defined, using '$(DOCKER_HUB_INSTALL_REPO)' instead)
 endif
-ifndef DOCKER_HUB_PXINIT_IMAGE
-    DOCKER_HUB_PXINIT_IMAGE := px-init
-    $(warning DOCKER_HUB_PXINIT_IMAGE not defined, using '$(DOCKER_HUB_PXINIT_IMAGE)' instead)
-endif
 ifndef DOCKER_HUB_MONITOR_IMAGE
     DOCKER_HUB_MONITOR_IMAGE := monitor
     $(warning DOCKER_HUB_MONITOR_IMAGE not defined, using '$(DOCKER_HUB_MONITOR_IMAGE)' instead)
@@ -31,7 +27,6 @@ endif
 GO		:= go
 GOENV		:= GOOS=linux GOARCH=amd64
 SUDO		:= sudo
-PXINIT_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_PXINIT_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 MONITOR_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 WEBSVC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
 RUNC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_RUNC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
@@ -50,7 +45,7 @@ ifeq ($(shell id -u),0)
     SUDO :=
 endif
 
-TARGETS += px-init px-mon px-spec-websvc px-runcds
+TARGETS += px-mon px-spec-websvc px-runcds
 $(info  $(TARGETS))
 
 
@@ -60,10 +55,6 @@ $(info  $(TARGETS))
 .PHONY: all deploy clean distclean vendor-pull px-container $(TARGETS)
 
 all: $(TARGETS)
-
-px-init: px-init/px-init.go
-	@echo "Building $@..."
-	@cd px-init && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
 px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
 	@echo "Building $@..."
@@ -78,7 +69,6 @@ px-runcds: px-runcds/px-runcds.go vendor/github.com/docker/docker/api
 	@cd px-runcds && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
 px-container:
-	@cd px-init && $(SUDO) docker build -t $(PXINIT_IMG) .
 	@cd px-mon && $(SUDO) docker build -t $(MONITOR_IMG) .
 	@cd px-spec-websvc && $(SUDO) docker build -t $(WEBSVC_IMG) .
 	@cd px-runcds && $(SUDO) docker build -t $(RUNC_IMG) .
@@ -98,15 +88,14 @@ ifneq ($(DOCKER_HUB_PASSWD),)
 	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
 	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
 endif
-	$(SUDO) docker push $(PXINIT_IMG)
 	$(SUDO) docker push $(MONITOR_IMG)
 	$(SUDO) docker push $(WEBSVC_IMG)
 	$(SUDO) docker push $(RUNC_IMG)
 	-$(SUDO) docker logout
 
 clean:
-	@rm -rf px-init/px-init px-mon/px-mon px-spec-websvc/px-spec-websvc px-runcds/px-runcds
-	-$(SUDO) docker rmi -f $(PXINIT_IMG) $(MONITOR_IMG) $(WEBSVC_IMG) $(RUNC_IMG)
+	@rm -rf px-mon/px-mon px-spec-websvc/px-spec-websvc px-runcds/px-runcds
+	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(RUNC_IMG)
 
 distclean: clean
 	@rm -fr vendor/github.com vendor/golang.org
