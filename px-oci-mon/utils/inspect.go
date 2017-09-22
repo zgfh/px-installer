@@ -28,7 +28,7 @@ const cgroupFileName = "/proc/self/cgroup"
 
 var (
 	ErrContainerNotFound = errors.New("container not found")
-	containerIDre        = regexp.MustCompilePOSIX(`[0-9]+:name=.*/([0-9a-f]{64})\n`)
+	containerIDre        = regexp.MustCompilePOSIX(`[0-9]+:name=.*[/-]([0-9a-f]{64})`)
 )
 
 // GetMyContainerID extracts the Container ID from its cgroups entry.
