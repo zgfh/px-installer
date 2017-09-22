@@ -56,6 +56,7 @@ TARGETS += px-mon/px-mon px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
 
 all: $(TARGETS)
 
+
 px-mon/px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
 	@echo "Building $@ binary..."
 	@cd px-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
@@ -68,19 +69,21 @@ px-spec-websvc/px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.co
 	@echo "Building $@ binary..."
 	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
-px-mon-container: px-mon/px-mon
+
+px-mon-container:
 	@echo "Building $@ ..."
 	@cd px-mon && $(SUDO) docker build -t $(MONITOR_IMG) .
 
-px-oci-mon-container: px-oci-mon/px-oci-mon
+px-oci-mon-container:
 	@echo "Building $@ ..."
 	@cd px-oci-mon && $(SUDO) docker build -t $(OCIMON_IMG) .
 
-px-spec-websvc-container: px-spec-websvc/px-spec-websvc
+px-spec-websvc-container:
 	@echo "Building $@ ..."
 	@cd px-spec-websvc && $(SUDO) docker build -t $(WEBSVC_IMG) .
 
 px-container: px-mon-container px-oci-mon-container px-spec-websvc-container
+
 
 $(GOPATH)/bin/govendor:
 	$(GO) get -v github.com/kardianos/govendor
