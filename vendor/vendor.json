@@ -243,6 +243,12 @@
 			"revisionTime": "2017-09-15T13:39:20Z"
 		},
 		{
+			"checksumSHA1": "ZLK19eBuLoOIEE92Dwxx6qHHxDI=",
+			"path": "github.com/docker/docker/pkg/tlsconfig",
+			"revision": "87df0e533b619c088091fd1e2310e92bb9a24822",
+			"revisionTime": "2017-06-30T18:46:11Z"
+		},
+		{
 			"checksumSHA1": "JbiWTzH699Sqz25XmDlsARpMN9w=",
 			"path": "github.com/docker/go-connections/nat",
 			"revision": "3ede32e2033de7505e6500d6c868c2b9ed9f169d",
