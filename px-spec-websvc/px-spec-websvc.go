@@ -19,7 +19,7 @@ import (
 const (
 	currentPxImage = "portworx/px-enterprise:1.2.10"
 	// TODO: Change to official image for PX-RunC (once released)
-	currentRunCImage = "zoxpx/px-runcds:f82b657"
+	currentRunCImage = "portworx/oci-monitor:latest"
 )
 
 type Params struct {

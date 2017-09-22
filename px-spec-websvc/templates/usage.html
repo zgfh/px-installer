@@ -209,7 +209,7 @@
       }
     }
     s = document.URL + s
-    k.innerHTML = "kubectl apply -f <a href=\"" + s + "\">" + s + "</a>"
+    k.innerHTML = "kubectl apply -f '<a href=\"" + s + "\">" + s + "</a>'"
   }
 
   testSelect(document.getElementById("my-form"));

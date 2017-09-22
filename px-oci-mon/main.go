@@ -76,7 +76,9 @@ func runExternal(name string, params ...string) error {
 func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) error {
 	logrus.Info("Downloading Portworx...")
 
-	instlr, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
+	// NOTE: see https://docs.docker.com/engine/api/v1.26/#section/Versioning
+	// - the "v1.24" supports docker v1.12 and newer
+	instlr, err := utils.NewDockerInstallerDirect("1.24", os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
 	if err != nil {
 		logrus.WithError(err).Error("Could not 'talk' to Docker")
 		usage("Could not 'talk' to Docker" +

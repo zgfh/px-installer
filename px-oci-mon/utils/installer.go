@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"strings"
 
@@ -40,6 +41,27 @@ func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 		cli:  cli,
 	}, nil
 }
+
+// NewDockerInstallerDirect creates an instance of the DockerInstaller using a "direct" Docker client invocation
+func NewDockerInstallerDirect(apiVersion, user, pass string) (*DockerInstaller, error) {
+	auth, ctx := "", context.Background()
+	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, &http.Client{}, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if user != "" {
+		js := fmt.Sprintf(`{"username":%q,"password":%q}`, user, pass)
+		auth = base64.StdEncoding.EncodeToString([]byte(js))
+	}
+	return &DockerInstaller{
+		auth: auth,
+		ctx:  ctx,
+		cli:  cli,
+	}, nil
+}
+
 
 // PullImage pulls the image of a given name
 func (di *DockerInstaller) PullImage(name string) error {

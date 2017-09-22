@@ -106,9 +106,28 @@ endif
 	$(SUDO) docker push $(WEBSVC_IMG)
 	-$(SUDO) docker logout
 
+deploy_latest:
+	@echo "Re-Deploying current containers as TAG:latest..."
+ifneq ($(DOCKER_HUB_TAG),latest)
+ifneq ($(DOCKER_HUB_PASSWD),)
+	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
+	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
+endif
+	$(SUDO) docker tag $(MONITOR_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):latest
+	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):latest
+	$(SUDO) docker tag $(OCIMON_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest
+	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest
+	$(SUDO) docker tag $(WEBSVC_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
+	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
+	-$(SUDO) docker logout
+endif
+
 clean:
 	rm -f $(TARGETS)
-	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(OCIMON_IMG)
+	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(OCIMON_IMG) \
+	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):latest \
+	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest \
+	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
 
 distclean: clean
 	@rm -fr vendor/github.com vendor/golang.org
