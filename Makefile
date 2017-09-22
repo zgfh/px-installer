@@ -16,7 +16,7 @@ ifndef DOCKER_HUB_WEBSVC_IMAGE
     $(warning DOCKER_HUB_WEBSVC_IMAGE not defined, using '$(DOCKER_HUB_WEBSVC_IMAGE)' instead)
 endif
 ifndef DOCKER_HUB_OCIMON_IMAGE
-    DOCKER_HUB_OCIMON_IMAGE := px-oci-monitor
+    DOCKER_HUB_OCIMON_IMAGE := oci-monitor
     $(warning DOCKER_HUB_OCIMON_IMAGE not defined, using '$(DOCKER_HUB_OCIMON_IMAGE)' instead)
 endif
 ifndef DOCKER_HUB_TAG
@@ -104,7 +104,7 @@ endif
 	-$(SUDO) docker logout
 
 clean:
-	@rm -rf px-mon/px-mon px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
+	rm -f $(TARGETS)
 	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(OCIMON_IMG)
 
 distclean: clean
