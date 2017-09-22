@@ -14,8 +14,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/tlsconfig"
 	"path/filepath"
-	"github.com/moby/moby/pkg/tlsconfig"
 )
 
 // DockerInstaller is a Docker client specialized for Container installation
