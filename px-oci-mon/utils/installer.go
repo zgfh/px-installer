@@ -14,6 +14,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"path/filepath"
+	"github.com/moby/moby/pkg/tlsconfig"
 )
 
 // DockerInstaller is a Docker client specialized for Container installation
@@ -45,7 +47,28 @@ func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 // NewDockerInstallerDirect creates an instance of the DockerInstaller using a "direct" Docker client invocation
 func NewDockerInstallerDirect(apiVersion, user, pass string) (*DockerInstaller, error) {
 	auth, ctx := "", context.Background()
-	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, &http.Client{}, nil)
+
+	var httpClient *http.Client
+	if dockerCertPath := os.Getenv("DOCKER_CERT_PATH"); dockerCertPath != "" {
+		options := tlsconfig.Options{
+			CAFile:             filepath.Join(dockerCertPath, "ca.pem"),
+			CertFile:           filepath.Join(dockerCertPath, "cert.pem"),
+			KeyFile:            filepath.Join(dockerCertPath, "key.pem"),
+			InsecureSkipVerify: os.Getenv("DOCKER_TLS_VERIFY") == "",
+		}
+		tlsc, err := tlsconfig.Client(options)
+		if err != nil {
+			return nil, err
+		}
+
+		httpClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: tlsc,
+			},
+		}
+	}
+
+	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, &httpClient, nil)
 
 	if err != nil {
 		return nil, err
