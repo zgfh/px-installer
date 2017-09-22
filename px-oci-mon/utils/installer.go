@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -14,8 +15,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/tlsconfig"
-	"path/filepath"
+	"github.com/docker/go-connections/tlsconfig"
 )
 
 // DockerInstaller is a Docker client specialized for Container installation
@@ -68,7 +68,7 @@ func NewDockerInstallerDirect(apiVersion, user, pass string) (*DockerInstaller, 
 		}
 	}
 
-	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, &httpClient, nil)
+	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, httpClient, nil)
 
 	if err != nil {
 		return nil, err
