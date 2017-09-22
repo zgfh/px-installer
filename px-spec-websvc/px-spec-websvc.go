@@ -131,7 +131,7 @@ func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Could not decode form: %s", err)
 	}
-	fmt.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
+	log.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
 	return config, nil
 }
 
@@ -222,5 +222,6 @@ func main() {
 		fmt.Fprintf(w, content)
 	})
 
+	log.Printf("Serving at 0.0.0.0:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

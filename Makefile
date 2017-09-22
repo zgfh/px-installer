@@ -3,9 +3,9 @@
 
 # VARIABLES
 #
-ifndef DOCKER_HUB_INSTALL_REPO
-    DOCKER_HUB_INSTALL_REPO := portworx
-    $(warning DOCKER_HUB_INSTALL_REPO not defined, using '$(DOCKER_HUB_INSTALL_REPO)' instead)
+ifndef DOCKER_HUB_REPO
+    DOCKER_HUB_REPO := portworx
+    $(warning DOCKER_HUB_REPO not defined, using '$(DOCKER_HUB_REPO)' instead)
 endif
 ifndef DOCKER_HUB_MONITOR_IMAGE
     DOCKER_HUB_MONITOR_IMAGE := monitor
@@ -15,21 +15,22 @@ ifndef DOCKER_HUB_WEBSVC_IMAGE
     DOCKER_HUB_WEBSVC_IMAGE := monitor-websvc
     $(warning DOCKER_HUB_WEBSVC_IMAGE not defined, using '$(DOCKER_HUB_WEBSVC_IMAGE)' instead)
 endif
-ifndef DOCKER_HUB_RUNC_IMAGE
-    DOCKER_HUB_RUNC_IMAGE := px-runcds
-    $(warning DOCKER_HUB_RUNC_IMAGE not defined, using '$(DOCKER_HUB_RUNC_IMAGE)' instead)
+ifndef DOCKER_HUB_OCIMON_IMAGE
+    DOCKER_HUB_OCIMON_IMAGE := px-oci-monitor
+    $(warning DOCKER_HUB_OCIMON_IMAGE not defined, using '$(DOCKER_HUB_OCIMON_IMAGE)' instead)
 endif
-ifndef PX_INSTALLER_DOCKER_HUB_TAG
-    PX_INSTALLER_DOCKER_HUB_TAG := $(shell git rev-parse HEAD | cut -c-7)
-    $(warning PX_INSTALLER_DOCKER_HUB_TAG not defined, using '$(PX_INSTALLER_DOCKER_HUB_TAG)' instead)
+ifndef DOCKER_HUB_TAG
+    #DOCKER_HUB_TAG := $(shell git rev-parse HEAD | cut -c-7)
+    DOCKER_HUB_TAG := latest
+    $(warning DOCKER_HUB_TAG not defined, using '$(DOCKER_HUB_TAG)' instead)
 endif
 
 GO		:= go
 GOENV		:= GOOS=linux GOARCH=amd64
 SUDO		:= sudo
-MONITOR_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
-WEBSVC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
-RUNC_IMG	:= $(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_RUNC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
+MONITOR_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(DOCKER_HUB_TAG)
+WEBSVC_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
+OCIMON_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):$(DOCKER_HUB_TAG)
 
 BUILD_TYPE=static
 ifeq ($(BUILD_TYPE),static)
@@ -45,33 +46,41 @@ ifeq ($(shell id -u),0)
     SUDO :=
 endif
 
-TARGETS += px-mon px-spec-websvc px-runcds
-$(info  $(TARGETS))
+TARGETS += px-mon/px-mon px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
 
 
 # BUILD RULES
 #
 
-.PHONY: all deploy clean distclean vendor-pull px-container $(TARGETS)
+.PHONY: all deploy clean distclean vendor-pull px-container
 
 all: $(TARGETS)
 
-px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
-	@echo "Building $@..."
+px-mon/px-mon: px-mon/px-mon.go vendor/github.com/fsouza/go-dockerclient
+	@echo "Building $@ binary..."
 	@cd px-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
-px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
-	@echo "Building $@..."
+px-oci-mon/px-oci-mon: px-oci-mon/main.go vendor/github.com/docker/docker/api
+	@echo "Building $@ binary..."
+	@cd px-oci-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
+
+px-spec-websvc/px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
+	@echo "Building $@ binary..."
 	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
-px-runcds: px-runcds/px-runcds.go vendor/github.com/docker/docker/api
-	@echo "Building $@ binary..."
-	@cd px-runcds && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
-
-px-container:
+px-mon-container: px-mon/px-mon
+	@echo "Building $@ ..."
 	@cd px-mon && $(SUDO) docker build -t $(MONITOR_IMG) .
+
+px-oci-mon-container: px-oci-mon/px-oci-mon
+	@echo "Building $@ ..."
+	@cd px-oci-mon && $(SUDO) docker build -t $(OCIMON_IMG) .
+
+px-spec-websvc-container: px-spec-websvc/px-spec-websvc
+	@echo "Building $@ ..."
 	@cd px-spec-websvc && $(SUDO) docker build -t $(WEBSVC_IMG) .
-	@cd px-runcds && $(SUDO) docker build -t $(RUNC_IMG) .
+
+px-container: px-mon-container px-oci-mon-container px-spec-websvc-container
 
 $(GOPATH)/bin/govendor:
 	$(GO) get -v github.com/kardianos/govendor
@@ -84,18 +93,19 @@ vendor/github.com/docker/docker/api: vendor-pull
 vendor/github.com/gorilla/schema: vendor-pull
 
 deploy:
+	@echo "Deploying all containers..."
 ifneq ($(DOCKER_HUB_PASSWD),)
 	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
 	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
 endif
 	$(SUDO) docker push $(MONITOR_IMG)
+	$(SUDO) docker push $(OCIMON_IMG)
 	$(SUDO) docker push $(WEBSVC_IMG)
-	$(SUDO) docker push $(RUNC_IMG)
 	-$(SUDO) docker logout
 
 clean:
-	@rm -rf px-mon/px-mon px-spec-websvc/px-spec-websvc px-runcds/px-runcds
-	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(RUNC_IMG)
+	@rm -rf px-mon/px-mon px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
+	-$(SUDO) docker rmi -f $(MONITOR_IMG) $(WEBSVC_IMG) $(OCIMON_IMG)
 
 distclean: clean
 	@rm -fr vendor/github.com vendor/golang.org
