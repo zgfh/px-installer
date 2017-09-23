@@ -104,7 +104,6 @@ endif
 	$(SUDO) docker push $(MONITOR_IMG)
 	$(SUDO) docker push $(OCIMON_IMG)
 	$(SUDO) docker push $(WEBSVC_IMG)
-	-$(SUDO) docker logout
 
 deploy_latest:
 	@echo "Re-Deploying current containers as TAG:latest..."
@@ -119,7 +118,6 @@ endif
 	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest
 	$(SUDO) docker tag $(WEBSVC_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
 	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
-	-$(SUDO) docker logout
 endif
 
 clean:

@@ -22,28 +22,30 @@ const (
 	currentRunCImage = "portworx/oci-monitor:latest"
 )
 
+var emptyParams = Params{MasterLess: false, IsRunC: false}
+
 type Params struct {
-	Cluster     string `schema:"cluster"`
-	Kvdb        string `schema:"kvdb"`
-	Type        string `schema:"type"`
-	Drives      string `schema:"drives"`
-	DIface      string `schema:"diface"`
-	MIface      string `schema:"miface"`
-	Coreos      string `schema:"coreos"`
-	Master      string `schema:"master"`
-	ZeroStorage string `schema:"zeroStorage"`
-	Force       string `schema:"force"`
-	EtcdPasswd  string `schema:"etcdPasswd"`
-	EtcdCa      string `schema:"etcdCa"`
-	EtcdCert    string `schema:"etcdCert"`
-	EtcdKey     string `schema:"etcdKey"`
-	Acltoken    string `schema:"acltoken"`
-	Token       string `schema:"token"`
-	Env         string `schema:"env"`
-	Openshift   string `schema:"openshift"`
-	PxImage     string `schema:"pximage"`
-	MasterLess  bool   `schema:"-"`
-	IsRunC      bool   `schema:"-"`
+	Cluster     string `schema:"c"    deprecated:"cluster"`
+	Kvdb        string `schema:"k"    deprecated:"kvdb"`
+	Type        string `schema:"typ"  deprecated:"type"`
+	Drives      string `schema:"s"    deprecated:"drives"`
+	DIface      string `schema:"d"    deprecated:"diface"`
+	MIface      string `schema:"m"    deprecated:"miface"`
+	Coreos      string `schema:"co"   deprecated:"coreos"`
+	Master      string `schema:"m"    deprecated:"master"`
+	ZeroStorage string `schema:"z"    deprecated:"zeroStorage"`
+	Force       string `schema:"f"    deprecated:"force"`
+	EtcdPasswd  string `schema:"pwd"  deprecated:"etcdPasswd"`
+	EtcdCa      string `schema:"ca"   deprecated:"etcdCa"`
+	EtcdCert    string `schema:"cert" deprecated:"etcdCert"`
+	EtcdKey     string `schema:"key"  deprecated:"etcdKey"`
+	Acltoken    string `schema:"acl"  deprecated:"acltoken"`
+	Token       string `schema:"t"    deprecated:"token"`
+	Env         string `schema:"e"    deprecated:"env"`
+	Openshift   string `schema:"osft" deprecated:"openshift"`
+	PxImage     string `schema:"px"   deprecated:"pximage"`
+	MasterLess  bool   `schema:"-"    deprecated:"-"`
+	IsRunC      bool   `schema:"-"    deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
@@ -113,7 +115,7 @@ func generate(templateFile string, p *Params) (string, error) {
 }
 
 // parseRequest uses Gorilla schema to process parameters (see http://www.gorillatoolkit.org/pkg/schema)
-func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
+func parseRequest(r *http.Request, parseStrict, parseDeprecated bool) (*Params, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return nil, fmt.Errorf("Could not parse form: %s", err)
@@ -131,7 +133,20 @@ func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Could not decode form: %s", err)
 	}
+
+	if config != nil && *config == emptyParams {
+		log.Printf("Found no parseable values, parsing deprecated schema")
+		decoder = schema.NewDecoder()
+		decoder.SetAliasTag(`deprecated`)
+		decoder.IgnoreUnknownKeys(!parseStrict)
+		err = decoder.Decode(config, r.Form)
+		if err != nil {
+			return nil, fmt.Errorf("Could not decode deprecated form: %s", err)
+		}
+	}
+
 	log.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
+
 	return config, nil
 }
 
@@ -176,7 +191,7 @@ func main() {
 	parseStrict := len(os.Args) > 1 && os.Args[1] == "-strict"
 
 	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
-		p, err := parseRequest(r, parseStrict)
+		p, err := parseRequest(r, parseStrict, true)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
@@ -203,7 +218,7 @@ func main() {
 			return
 		}
 
-		p, err := parseRequest(r, parseStrict)
+		p, err := parseRequest(r, parseStrict, true)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return

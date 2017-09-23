@@ -7,6 +7,11 @@
       font-family: Helvetica, sans-serif
     }
 
+    code {
+      color: #F15A22;
+      font-family: Monaco, monospace;
+    }
+
     body {
       background-color: #37464c;
     }
@@ -79,64 +84,64 @@
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="cluster" VALUE="test_cluster" onChange="testSelect(this.form)">
+          <SELECT NAME="typ" onChange="testSelect(this.form)">
+            <OPTION value="dock">Docker container</OPTION>
+            <OPTION value="oci">OCI container</OPTION>
+          </SELECT>
         </td>
-        <td><code>cluster: </code> Specifies the unique name for the Portworx cluster. (example: <var>test_cluster</var>)</td>
+        <td><code>typ:</code> Select Portworx deployment type.</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="kvdb" VALUE="etcd:http://etc.fake.net:2379" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="c" VALUE="test_cluster" onChange="testSelect(this.form)">
         </td>
-        <td><code>kvdb: </code> Points to your key value database, such as an etcd cluster or a consul cluster. (example: <var>etcd:http(s)://etcd.fake.net:2379</var>)</td>
+        <td><code>c:</code> Specifies the unique name for the Portworx cluster. (example: <var>test_cluster</var>)</td>
+      </tr>
+      <tr>
+        <td>
+          <INPUT TYPE="text" NAME="k" VALUE="etcd:http://etc.fake.net:2379" onChange="testSelect(this.form)">
+        </td>
+        <td><code>k:</code> Points to your key value database, such as an etcd cluster or a consul cluster. (example: <var>etcd:http(s)://etcd.fake.net:2379</var>)</td>
       </tr>
       <tr>
         <td COLSPAN="2" ALIGN="center"><small>OPTIONAL PARAMETERS</small></td>
       </tr>
       <tr>
         <td>
-          <SELECT NAME="type" onChange="testSelect(this.form)">
-    <OPTION value="cont">Docker container</OPTION>
-    <OPTION value="runc">RunC container</OPTION>
-    </SELECT>
+          <INPUT TYPE="text" NAME="s" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>type: </code> Select Portworx deployment type.</td>
+        <td><code>s:</code> Specify comma-separated list of drives. (example: <var>/dev/sdb,/dev/sdc</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="drives" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="d" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>drives: </code> Specify comma-separated list of drives. (example: <var>/dev/sdb,/dev/sdc</var>)</td>
-      </tr>
-      <tr>
-        <td>
-          <INPUT TYPE="text" NAME="diface" VALUE="" onChange="testSelect(this.form)">
-        </td>
-        <td><code>diface: </code> Specifies the data interface. This is useful if your instances have non-standard network interfaces.
+        <td><code>d:</code> Specifies the data interface. This is useful if your instances have non-standard network interfaces.
           (example: <var>eth1</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="miface" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="m" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>miface: </code> Specifies the management interface. This is useful if your instances have non-standard network
+        <td><code>m:</code> Specifies the management interface. This is useful if your instances have non-standard network
           interfaces. (example: <var>eth1</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="coreos" onClick="testSelect(this.form)"></td>
-        <td><code>coreos: </code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
+        <td><input type="checkbox" NAME="co" onClick="testSelect(this.form)"></td>
+        <td><code>co:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="master" onClick="testSelect(this.form)"></td>
-        <td><code>master: </code> If true, PX will run on the master node. For Kubernetes 1.6.4 and prior, this needs to be true
+        <td><input type="checkbox" NAME="mas" onClick="testSelect(this.form)"></td>
+        <td><code>mas:</code> If true, PX will run on the master node. For Kubernetes 1.6.4 and prior, this needs to be true
           (default is false) (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="zeroStorage" onClick="testSelect(this.form)"></td>
-        <td><code>zeroStorage: </code> Instructs PX to run in zero storage mode on kubernetes master. (example: <var>true</var>)</td>
+        <td><input type="checkbox" NAME="z" onClick="testSelect(this.form)"></td>
+        <td><code>z:</code> Instructs PX to run in zero storage mode on kubernetes master. (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="force" onClick="testSelect(this.form)"></td>
-        <td><code>force: </code> Instructs PX to use any available, unused and unmounted drives or partitions. PX will never
+        <td><input type="checkbox" NAME="f" onClick="testSelect(this.form)"></td>
+        <td><code>f:</code> Instructs PX to use any available, unused and unmounted drives or partitions. PX will never
           use a drive or partition that is mounted. (example: <var>true</var>)</td>
       </tr>
       <tr>
@@ -144,48 +149,48 @@
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="etcdPasswd" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="pwd" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>etcdPasswd: </code> Username and password for ETCD authentication in the form user:password (example: <var>username:password</var>)</td>
+        <td><code>pwd:</code> Username and password for ETCD authentication in the form user:password (example: <var>username:password</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="etcdCa" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="ca" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>etcdCa: </code> Location of CA file for ETCD authentication. (example: <var>/path/to/server.ca</var>)</td>
+        <td><code>ca:</code> Location of CA file for ETCD authentication. (example: <var>/path/to/server.ca</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="etcdCert" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="cert" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>etcdCert: </code> Location of certificate for ETCD authentication. (example: <var>/path/to/server.crt</var>)</td>
+        <td><code>cert:</code> Location of certificate for ETCD authentication. (example: <var>/path/to/server.crt</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="etcdKey" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="key" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>etcdKey: </code> Location of certificate key for ETCD authentication. (example: <var>/path/to/server.key</var>)</td>
+        <td><code>key:</code> Location of certificate key for ETCD authentication. (example: <var>/path/to/server.key</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="acltoken" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="acl" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>acltoken: </code> ACL token value used for Consul authentication. (example: <var>398073a8-5091-4d9c-871a-bbbeb030d1f6</var>)</td>
+        <td><code>acl:</code> ACL token value used for Consul authentication. (example: <var>398073a8-5091-4d9c-871a-bbbeb030d1f6</var>)</td>
       </tr>
       <tr>
         <td COLSPAN="2" ALIGN="center"><small>LIGHTHOUSE CONFIGURATION PARAMETERS</small></td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="token" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="t" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>token: </code> Portworx lighthouse token for cluster. (example: <var>a980f3a8-5091-4d9c-871a-cbbeb030d1e6</var>)</td>
+        <td><code>t:</code> Portworx lighthouse token for cluster. (example: <var>a980f3a8-5091-4d9c-871a-cbbeb030d1e6</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="env" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="e" VALUE="" onChange="testSelect(this.form)">
         </td>
-        <td><code>env: </code> Comma-separated list of environment variables that will be exported to portworx. (example: <var>API_SERVER=http://lighthouse-new.portworx.com</var>)</td>
+        <td><code>e:</code> Comma-separated list of environment variables that will be exported to portworx. (example: <var>API_SERVER=http://lighthouse-new.portworx.com</var>)</td>
         <tr>
     </table>
   </form>
@@ -201,7 +206,7 @@
     var s = ""
     for (var i = 0, el; el = elements[i++];) {
       if ((el.type === "text" && el.value != "") || (el.type === "select-one")) {
-        s += sep + el.name + "=" + encodeURIComponent(el.value)
+        s += sep + el.name + "=" + el.value.replace(/=/g, '%3D')
         sep = "&"
       } else if (el.type === "checkbox" && el.checked) {
         s += sep + el.name + "=true"

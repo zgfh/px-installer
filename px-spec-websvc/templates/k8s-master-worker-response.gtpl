@@ -238,12 +238,12 @@ spec:
               mountPath: /var/run/docker.sock
             - name: kubelet
               mountPath: /var/lib/kubelet:shared
+            - name: libosd
+              mountPath: /var/lib/osd:shared
             {{- if .IsRunC}}
             - name: proc1nsmount
               mountPath: /host_proc/1/ns
             {{- else}}
-            - name: libosd
-              mountPath: /var/lib/osd:shared
             - name: dev
               mountPath: /dev
             - name: etcpwx
@@ -266,14 +266,14 @@ spec:
         - name: kubelet
           hostPath:
             path: /var/lib/kubelet
+        - name: libosd
+          hostPath:
+            path: /var/lib/osd
         {{- if .IsRunC}}
         - name: proc1nsmount
           hostPath:
             path: /proc/1/ns
         {{- else}}
-        - name: libosd
-          hostPath:
-            path: /var/lib/osd
         - name: dev
           hostPath:
             path: /dev

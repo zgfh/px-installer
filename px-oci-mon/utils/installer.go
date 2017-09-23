@@ -85,7 +85,6 @@ func NewDockerInstallerDirect(apiVersion, user, pass string) (*DockerInstaller, 
 	}, nil
 }
 
-
 // PullImage pulls the image of a given name
 func (di *DockerInstaller) PullImage(name string) error {
 	opts := types.ImagePullOptions{RegistryAuth: di.auth}
