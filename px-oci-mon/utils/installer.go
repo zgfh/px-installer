@@ -71,6 +71,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) err
 	hostConf := container.HostConfig{}
 	if len(mounts) > 0 {
 		hostConf.Mounts = make([]mount.Mount, len(mounts))
+		hostConf.Binds = make([]string, len(mounts))
 		for i, m := range mounts {
 			var mnt mount.Mount
 			parts := strings.Split(m, ":")
@@ -94,6 +95,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) err
 				return fmt.Errorf("INTERNAL ERROR: do not handle propagated mounts (%s)", m)
 			}
 			hostConf.Mounts[i] = mnt
+			hostConf.Binds[i] = mnt.Source + ":" + mnt.Target
 		}
 	}
 
@@ -105,6 +107,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) err
 	logrus.WithError(err).Debug("Old container removed")
 
 	logrus.Info("Creating container from image ", name)
+	logrus.Debugf("> CONF: %+v  /  HOST: %+v", contConf, hostConf)
 	resp, err := di.cli.ContainerCreate(di.ctx, &contConf, &hostConf, nil, cntr)
 	if err != nil {
 		return fmt.Errorf("Could not create container %s: %s", name, err)
