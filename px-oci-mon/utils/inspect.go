@@ -8,11 +8,8 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
-	"golang.org/x/net/context"
 )
 
 // SimpleContainerConfig is a simplified container configuration, which includes arguments,
@@ -81,37 +78,3 @@ func formatMounts(mounts []types.MountPoint) []string {
 	return outList
 }
 
-// ExtractConfig extracts the containers configuration
-func ExtractConfig(id string) (*SimpleContainerConfig, error) {
-	scc := SimpleContainerConfig{}
-	ctx := context.Background()
-	cli, err := client.NewEnvClient()
-	if err != nil {
-		return nil, fmt.Errorf("Error instantiating Docker client: %s", err)
-	}
-
-	cconf, err := cli.ContainerInspect(ctx, id)
-	if err != nil {
-		return nil, fmt.Errorf("Error inspecting container '%s': %s", id, err)
-	}
-	logrus.Debugf("COnFIG:%+v", cconf)
-
-	// Copy arguments
-	scc.Args = make([]string, len(cconf.Args))
-	copy(scc.Args, cconf.Args)
-
-	// Copy mounts
-	scc.Mounts = formatMounts(cconf.Mounts)
-
-	// Copy ENV
-	scc.Env = make([]string, len(cconf.Config.Env))
-	copy(scc.Env, cconf.Config.Env)
-
-	// Copy LABELS
-	scc.Labels = make(map[string]string)
-	for k, v := range cconf.Config.Labels {
-		scc.Labels[k] = v
-	}
-
-	return &scc, nil
-}

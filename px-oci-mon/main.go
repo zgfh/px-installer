@@ -73,19 +73,10 @@ func runExternal(name string, params ...string) error {
 	return cmd.Run()
 }
 
-func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) error {
+func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) error {
 	logrus.Info("Downloading Portworx...")
 
-	// NOTE: see https://docs.docker.com/engine/api/v1.26/#section/Versioning
-	// - the "v1.24" supports docker v1.12 and newer
-	instlr, err := utils.NewDockerInstallerDirect("1.24", os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
-	if err != nil {
-		logrus.WithError(err).Error("Could not 'talk' to Docker")
-		usage("Could not 'talk' to Docker" +
-			" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
-	}
-
-	err = instlr.PullImage(imageName)
+	err := di.PullImage(imageName)
 	if err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
@@ -102,7 +93,7 @@ func installPxFromOciImage(imageName string, cfg *utils.SimpleContainerConfig) e
 		}
 	}
 
-	err = instlr.RunOnce(imageName, ociInstallerName,
+	err = di.RunOnce(imageName, ociInstallerName,
 		[]string{"--upgrade-inplace"}, []string{"/opt/pwx", "/etc/pwx"})
 	if err != nil {
 		logrus.WithError(err).Error("Could not install ", imageName)
@@ -177,7 +168,14 @@ func doInstall() {
 		os.Exit(-1)
 	}
 
-	opts, err := utils.ExtractConfig(id)
+	di, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
+	if err != nil {
+		logrus.WithError(err).Error("Could not 'talk' to Docker")
+		usage("Could not 'talk' to Docker" +
+				" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
+	}
+
+	opts, err := di.ExtractConfig(id)
 	if err != nil {
 		logrus.WithError(err).Error("Could not extract my container's configuration" +
 			" - are you running me inside Docker?")
@@ -187,7 +185,7 @@ func doInstall() {
 	// TODO: Sanity checks for options
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
 
-	err = installPxFromOciImage(pxImage, opts)
+	err = installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
 		logrus.WithError(err).Error("Could not install Portworx service")
 		os.Exit(-1)

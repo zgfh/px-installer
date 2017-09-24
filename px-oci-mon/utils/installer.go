@@ -5,9 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/Sirupsen/logrus"
@@ -15,7 +13,6 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/tlsconfig"
 )
 
 // DockerInstaller is a Docker client specialized for Container installation
@@ -28,51 +25,14 @@ type DockerInstaller struct {
 // NewDockerInstaller creates an instance of the DockerInstaller
 func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 	auth, ctx := "", context.Background()
-	cli, err := client.NewEnvClient()
+
+	// NOTE: see https://docs.docker.com/engine/api/v1.26/#section/Versioning
+	cli, err := client.NewClient("unix:///var/run/docker.sock", "1.23", nil, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	if user != "" {
-		js := fmt.Sprintf(`{"username":%q,"password":%q}`, user, pass)
-		auth = base64.StdEncoding.EncodeToString([]byte(js))
-	}
-	return &DockerInstaller{
-		auth: auth,
-		ctx:  ctx,
-		cli:  cli,
-	}, nil
-}
-
-// NewDockerInstallerDirect creates an instance of the DockerInstaller using a "direct" Docker client invocation
-func NewDockerInstallerDirect(apiVersion, user, pass string) (*DockerInstaller, error) {
-	auth, ctx := "", context.Background()
-
-	var httpClient *http.Client
-	if dockerCertPath := os.Getenv("DOCKER_CERT_PATH"); dockerCertPath != "" {
-		options := tlsconfig.Options{
-			CAFile:             filepath.Join(dockerCertPath, "ca.pem"),
-			CertFile:           filepath.Join(dockerCertPath, "cert.pem"),
-			KeyFile:            filepath.Join(dockerCertPath, "key.pem"),
-			InsecureSkipVerify: os.Getenv("DOCKER_TLS_VERIFY") == "",
-		}
-		tlsc, err := tlsconfig.Client(options)
-		if err != nil {
-			return nil, err
-		}
-
-		httpClient = &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: tlsc,
-			},
-		}
-	}
-
-	cli, err := client.NewClient(client.DefaultDockerHost, apiVersion, httpClient, nil)
-
-	if err != nil {
-		return nil, err
-	}
+	cli.NegotiateAPIVersion(ctx)
 
 	if user != "" {
 		js := fmt.Sprintf(`{"username":%q,"password":%q}`, user, pass)
@@ -192,4 +152,34 @@ func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) err
 	}
 
 	return retError
+}
+
+// ExtractConfig extracts the containers configuration
+func (di *DockerInstaller) ExtractConfig(id string) (*SimpleContainerConfig, error) {
+	scc := SimpleContainerConfig{}
+
+	cconf, err := di.cli.ContainerInspect(di.ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("Error inspecting container '%s': %s", id, err)
+	}
+	logrus.Debugf("COnFIG:%+v", cconf)
+
+	// Copy arguments
+	scc.Args = make([]string, len(cconf.Args))
+	copy(scc.Args, cconf.Args)
+
+	// Copy mounts
+	scc.Mounts = formatMounts(cconf.Mounts)
+
+	// Copy ENV
+	scc.Env = make([]string, len(cconf.Config.Env))
+	copy(scc.Env, cconf.Config.Env)
+
+	// Copy LABELS
+	scc.Labels = make(map[string]string)
+	for k, v := range cconf.Config.Labels {
+		scc.Labels[k] = v
+	}
+
+	return &scc, nil
 }
