@@ -95,7 +95,7 @@ func generate(templateFile string, p *Params) (string, error) {
 		}
 	}
 
-	p.IsRunC = (p.Type == "runc")
+	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
 	p.MasterLess = (p.Master != "true")
 
 	if p.PxImage == "" {
