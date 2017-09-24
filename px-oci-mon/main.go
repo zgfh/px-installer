@@ -93,8 +93,8 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		}
 	}
 
-	err = di.RunOnce(imageName, ociInstallerName,
-		[]string{"--upgrade-inplace"}, []string{"/opt/pwx", "/etc/pwx"})
+	err = di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
+		[]string{ "/runc-entry-point.sh", "--debug" }, []string{"--upgrade-inplace"} )
 	if err != nil {
 		logrus.WithError(err).Error("Could not install ", imageName)
 		usage("Could not install " + imageName +

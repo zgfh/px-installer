@@ -6,12 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
 )
 
@@ -57,7 +55,7 @@ func (di *DockerInstaller) PullImage(name string) error {
 }
 
 // RunOnce will create container, run it, wait until it's finished, and finally remove it.
-func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) error {
+func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string) error {
 	contConf := container.Config{
 		Image:        name,
 		Cmd:          args,
@@ -67,36 +65,13 @@ func (di *DockerInstaller) RunOnce(name, cntr string, args, mounts []string) err
 		Tty:          false,
 	}
 
-	// handle mounts
-	hostConf := container.HostConfig{}
-	if len(mounts) > 0 {
-		hostConf.Mounts = make([]mount.Mount, len(mounts))
-		hostConf.Binds = make([]string, len(mounts))
-		for i, m := range mounts {
-			var mnt mount.Mount
-			parts := strings.Split(m, ":")
-			switch len(parts) {
-			case 1:
-				// parsed "/opt/pwx" -style mount
-				mnt = mount.Mount{
-					Source: m,
-					Target: m,
-					Type:   mount.TypeBind,
-				}
-			case 2:
-				// parsed "/opt/pwx:/opt/pwx" -style mount
-				mnt = mount.Mount{
-					Source: parts[0],
-					Target: parts[1],
-					Type:   mount.TypeBind,
-				}
-			default:
-				// parsed "/opt/pwx:/opt/pwx:shared,ro" -style mount
-				return fmt.Errorf("INTERNAL ERROR: do not handle propagated mounts (%s)", m)
-			}
-			hostConf.Mounts[i] = mnt
-			hostConf.Binds[i] = mnt.Source + ":" + mnt.Target
-		}
+	if len(entrypoint) > 0 {
+		logrus.Infof("Overriding entrypoint with %v", entrypoint)
+		contConf.Entrypoint = entrypoint
+	}
+
+	hostConf := container.HostConfig{
+		Binds: binds,
 	}
 
 	logrus.Infof("Removing old container %s (if any)", cntr)
@@ -165,7 +140,7 @@ func (di *DockerInstaller) ExtractConfig(id string) (*SimpleContainerConfig, err
 	if err != nil {
 		return nil, fmt.Errorf("Error inspecting container '%s': %s", id, err)
 	}
-	logrus.Debugf("COnFIG:%+v", cconf)
+	logrus.Debugf("CONFIG:%+v", cconf)
 
 	// Copy arguments
 	scc.Args = make([]string, len(cconf.Args))
