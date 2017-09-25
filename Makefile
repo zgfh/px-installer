@@ -1,30 +1,114 @@
-PXINIT_IMG=$(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_PXINIT_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
-MONITOR_IMG=$(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_MONITOR_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
-WEBSVC_IMG=$(DOCKER_HUB_INSTALL_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(PX_INSTALLER_DOCKER_HUB_TAG)
+# Makefile for PX-INSTALLER project
+#
 
-all: clean
-	go build -o px-init/px-init px-init/px-init.go
-	go build -o px-mon/px-mon px-mon/px-mon.go
-	go build -o px-spec-websvc/px-spec-websvc px-spec-websvc/px-spec-websvc.go
+# VARIABLES
+#
+ifndef DOCKER_HUB_REPO
+    DOCKER_HUB_REPO := $(shell id -un)px
+    $(warning DOCKER_HUB_REPO not defined, using '$(DOCKER_HUB_REPO)' instead)
+endif
+ifndef DOCKER_HUB_WEBSVC_IMAGE
+    DOCKER_HUB_WEBSVC_IMAGE := monitor-websvc
+    $(warning DOCKER_HUB_WEBSVC_IMAGE not defined, using '$(DOCKER_HUB_WEBSVC_IMAGE)' instead)
+endif
+ifndef DOCKER_HUB_OCIMON_IMAGE
+    DOCKER_HUB_OCIMON_IMAGE := oci-monitor
+    $(warning DOCKER_HUB_OCIMON_IMAGE not defined, using '$(DOCKER_HUB_OCIMON_IMAGE)' instead)
+endif
+ifndef DOCKER_HUB_TAG
+    #DOCKER_HUB_TAG := $(shell git rev-parse HEAD | cut -c-7)
+    DOCKER_HUB_TAG := latest
+    $(warning DOCKER_HUB_TAG not defined, using '$(DOCKER_HUB_TAG)' instead)
+endif
 
-	@echo "Building container: docker build --tag $(PXINIT_IMG) -f px-init/Dockerfile ."
-	sudo docker build --tag $(PXINIT_IMG) -f px-init/Dockerfile px-init
+GO		:= go
+GOENV		:= GOOS=linux GOARCH=amd64
+SUDO		:= sudo
+OCIMON_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):$(DOCKER_HUB_TAG)
+WEBSVC_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
 
-	@echo "Building container: docker build --tag $(MONITOR_IMG) -f px-mon/Dockerfile ."
-	sudo docker build --tag $(MONITOR_IMG) -f px-mon/Dockerfile px-mon
+BUILD_TYPE=static
+ifeq ($(BUILD_TYPE),static)
+    BUILD_OPTIONS += -v -a --ldflags "-extldflags -static"
+    GOENV += CGO_ENABLED=0
+else ifeq ($(BUILD_TYPE),debug)
+    BUILD_OPTIONS += -i -v -gcflags "-N -l"
+else
+    BUILD_OPTIONS += -i -v
+endif
 
-	@echo "Building container: docker build --tag $(WEBSVC_IMG) -f px-spec-websvc/Dockerfile ."
-	sudo docker build --tag $(WEBSVC_IMG) -f px-spec-websvc/Dockerfile px-spec-websvc
+ifeq ($(shell id -u),0)
+    SUDO :=
+endif
 
-deploy: all
-	docker push $(PXINIT_IMG)
-	docker push $(MONITOR_IMG)
-	docker push $(WEBSVC_IMG)
+TARGETS += px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
+
+
+# BUILD RULES
+#
+
+.PHONY: all deploy clean distclean vendor-pull px-container
+
+all: $(TARGETS)
+
+
+px-oci-mon/px-oci-mon: px-oci-mon/main.go vendor/github.com/docker/docker/api
+	@echo "Building $@ binary..."
+	@cd px-oci-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
+
+px-spec-websvc/px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
+	@echo "Building $@ binary..."
+	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
+
+
+px-oci-mon-container:
+	@echo "Building $@ ..."
+	@cd px-oci-mon && $(SUDO) docker build -t $(OCIMON_IMG) .
+
+px-spec-websvc-container:
+	@echo "Building $@ ..."
+	@cd px-spec-websvc && $(SUDO) docker build -t $(WEBSVC_IMG) .
+
+px-container: px-oci-mon-container px-spec-websvc-container
+
+
+$(GOPATH)/bin/govendor:
+	$(GO) get -v github.com/kardianos/govendor
+
+vendor-pull: $(GOPATH)/bin/govendor
+	$(GOENV) $(GOPATH)/bin/govendor sync
+
+vendor/github.com/fsouza/go-dockerclient: vendor-pull
+vendor/github.com/docker/docker/api: vendor-pull
+vendor/github.com/gorilla/schema: vendor-pull
+
+deploy:
+	@echo "Deploying all containers..."
+ifneq ($(DOCKER_HUB_PASSWD),)
+	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
+	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
+endif
+	$(SUDO) docker push $(OCIMON_IMG)
+	$(SUDO) docker push $(WEBSVC_IMG)
+
+deploy_latest:
+	@echo "Re-Deploying current containers as TAG:latest..."
+ifneq ($(DOCKER_HUB_TAG),latest)
+ifneq ($(DOCKER_HUB_PASSWD),)
+	$(warning Found DOCKER_HUB_PASSWD env - using authenticated docker push)
+	$(SUDO) docker login --username=$(DOCKER_HUB_USER) --password=$(DOCKER_HUB_PASSWD)
+endif
+	$(SUDO) docker tag $(OCIMON_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest
+	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest
+	$(SUDO) docker tag $(WEBSVC_IMG) $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
+	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
+endif
 
 clean:
-	-rm -rf px-init/px-init
-	-rm -rf px-mon/px-mon
-	-rm -rf px-spec-websvc/px-spec-websvc
-	-docker rmi -f $(PXINIT_IMG)
-	-docker rmi -f $(MONITOR_IMG)
-	-docker rmi -f $(WEBSVC_IMG)
+	rm -f $(TARGETS)
+	-$(SUDO) docker rmi -f $(WEBSVC_IMG) $(OCIMON_IMG) \
+	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest \
+	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
+
+distclean: clean
+	@rm -fr vendor/github.com vendor/golang.org

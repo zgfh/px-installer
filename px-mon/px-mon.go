@@ -11,13 +11,13 @@ import (
 	dockerclient "github.com/fsouza/go-dockerclient"
 	"os/exec"
 	s "os/signal"
-	"syscall"
 	"regexp"
+	"syscall"
 )
 
 const (
-	pxImage    = "portworx/px-enterprise"
-	pxImageTag = "latest"
+	pxImage         = "portworx/px-enterprise"
+	pxImageTag      = "latest"
 	pxContainerName = "px"
 )
 
@@ -66,7 +66,7 @@ func handlerSigTerm() {
 		fmt.Printf("Stopped px container: %v (%v) succesfully\n", c.Names, c.ID)
 
 		fmt.Printf("Removing px container: %v (%v)\n", c.Names, c.ID)
-		opts := dockerclient.RemoveContainerOptions{ID : c.ID}
+		opts := dockerclient.RemoveContainerOptions{ID: c.ID}
 		err = docker.RemoveContainer(opts)
 		if err != nil {
 			fmt.Printf("Failed to remove px container. Err: %v\n", err)
@@ -101,7 +101,7 @@ func handlerSigKill() {
 		fmt.Printf("Killing px container: %v (%v) succesfully\n", c.Names, c.ID)
 
 		fmt.Printf("Removing px container: %v (%v)\n", c.Names, c.ID)
-		rmOpts := dockerclient.RemoveContainerOptions{ID : c.ID, Force: true}
+		rmOpts := dockerclient.RemoveContainerOptions{ID: c.ID, Force: true}
 		err = docker.RemoveContainer(rmOpts)
 		if err != nil {
 			fmt.Printf("Failed to remove px container. Err: %v\n", err)
@@ -186,7 +186,7 @@ func install(args []string) error {
 			return nil
 		}
 
-		opts := dockerclient.RemoveContainerOptions{ID : c.ID}
+		opts := dockerclient.RemoveContainerOptions{ID: c.ID}
 		err = docker.RemoveContainer(opts)
 		if err != nil {
 			fmt.Println("Could not remove existing Portworx container: ", err.Error())
