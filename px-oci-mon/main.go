@@ -76,16 +76,14 @@ func runExternal(name string, params ...string) error {
 func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) error {
 	logrus.Info("Downloading Portworx...")
 
-	err := di.PullImage(imageName)
-	if err != nil {
+	if err := di.PullImage(imageName); err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
 			" - have you specified REGISTRY_USER/REGISTRY_PASS env. variables?")
 	}
 
 	// NOTE: This step is required, if px-runcds does not mount pwx-dirs
-	err = runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx")
-	if err != nil {
+	if err := runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
 		logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
 		err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
 		if err != nil {
@@ -93,7 +91,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		}
 	}
 
-	err = di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
+	err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
 		[]string{ "/runc-entry-point.sh", "--debug" }, []string{"--upgrade-inplace"} )
 	if err != nil {
 		logrus.WithError(err).Error("Could not install ", imageName)
@@ -124,12 +122,12 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	// TODO: Add Labels?
 
-	err = runExternal(args[0], args[1:]...)
-	if err != nil {
+	if err = runExternal(args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
+		return err
 	}
 
-	return err
+	return nil
 }
 
 func validateMounts(mounts ...string) error {
@@ -170,8 +168,8 @@ func doInstall() {
 
 	di, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
 	if err != nil {
-		logrus.WithError(err).Error("Could not 'talk' to Docker")
-		usage("Could not 'talk' to Docker" +
+		logrus.WithError(err).Error("Could not talk to Docker")
+		usage("Could not talk to Docker" +
 				" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
 	}
 
@@ -217,7 +215,8 @@ func doUninstall() {
 	err = runExternal("/bin/sh", "-c",
 		`systemctl disable portworx`)
 	if err != nil {
-		logrus.WithError(err).Warn("Could not disable Portworx service (continuing)")
+		logrus.WithError(err).Error("Could not disable Portworx service")
+		os.Exit(-1) // NOTE: CRITICAL failure !!
 	}
 
 	logrus.Info("Removing Portworx service bind-mount (if any)")
@@ -252,7 +251,7 @@ func main() {
 		usage("Command " + os.Args[1] + " not supported")
 	}
 
-	// CHECKME: Should we always go to sleep, or can we also exit
+	// NOTE: we are DaemonSet entrypoint, so we should not exit
 	logrus.Infof("%s done - going to sleep", strings.Title(os.Args[1]))
 	err := syscall.Pause()
 	logrus.WithError(err).Error("Could not pause")
