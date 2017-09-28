@@ -96,6 +96,7 @@ spec:
               "-x", "kubernetes", "-z"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
+            periodSeconds: 30
             initialDelaySeconds: 840 # allow image pull in slow networks
             httpGet:
               host: 127.0.0.1
@@ -208,6 +209,7 @@ spec:
               "-x", "kubernetes"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
+            periodSeconds: 30
             initialDelaySeconds: 840 # allow image pull in slow networks
             httpGet:
               host: 127.0.0.1
