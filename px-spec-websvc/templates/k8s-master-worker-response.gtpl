@@ -129,6 +129,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
       restartPolicy: Always
       serviceAccountName: px-account
       volumes:
@@ -159,6 +161,9 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
+        - name: hostproc
+          hostPath:
+            path: /proc
 ---
 apiVersion: extensions/v1beta1
 kind: DaemonSet
@@ -242,6 +247,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
       restartPolicy: Always
       serviceAccountName: px-account
       volumes:
@@ -272,3 +279,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
+        - name: hostproc
+          hostPath:
+            path: /proc
