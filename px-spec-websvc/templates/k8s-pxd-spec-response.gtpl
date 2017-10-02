@@ -126,6 +126,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
       restartPolicy: Always
       {{if .MasterLess}}{{else}}tolerations:
       - key: node-role.kubernetes.io/master
@@ -159,3 +161,6 @@ spec:
         - name: dockersock
           hostPath:
             path: /var/run/docker.sock
+        - name: hostproc
+          hostPath:
+            path: /proc
