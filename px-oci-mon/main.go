@@ -1,10 +1,18 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
+	"regexp"
+	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
@@ -20,6 +28,8 @@ const (
 	baseServiceName    = "portworx"
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
 )
+
+var rsyncRegex = regexp.MustCompilePOSIX(`Number of regular files transferred: ([0-9,]+)`)
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
 func usage(args ...interface{}) {
@@ -61,7 +71,7 @@ examples:
 	os.Exit(1)
 }
 
-func runExternal(name string, params ...string) error {
+func runExternalWithOutput(out io.Writer, name string, params ...string) error {
 	args := make([]string, 0, 4+len(params))
 	args = append(args, "/usr/bin/nsenter", "--mount="+mntFileName, "--", name)
 	args = append(args, params...)
@@ -69,11 +79,54 @@ func runExternal(name string, params ...string) error {
 	logrus.Info("> run: ", strings.Join(args[3:], " "))
 	logrus.Debugf(">>> %+v", args)
 	cmd := exec.Command(args[0], args[1:]...)
-	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	if out == nil {
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+	} else {
+		// note: exec.CombinedOutput() assigns to bytes.buffer, like we do
+		cmd.Stdout, cmd.Stderr = out, out
+	}
 	return cmd.Run()
 }
 
-func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) error {
+func runExternal(name string, params ...string) error {
+	return runExternalWithOutput(nil, name, params...)
+}
+
+// Output filters --
+
+type regexFilter struct {
+	re  *regexp.Regexp
+	val []byte
+	sync.Mutex
+}
+
+func (r *regexFilter) Write(b []byte) (int, error) {
+	if m := r.re.FindAllSubmatch(b, -1); len(m) > 0 && len(m[0]) > 1 {
+		ll := len(m[0][1])
+		r.Lock()
+		r.val = make([]byte, ll)
+		copy(r.val, m[0][1])
+		r.Unlock()
+	}
+	return os.Stderr.Write(b)
+}
+
+type cachingOutput struct {
+	bb bytes.Buffer
+}
+
+func (c *cachingOutput) Write(b []byte) (int, error) {
+	c.bb.Write(b)
+	return os.Stderr.Write(b)
+}
+
+func (c *cachingOutput) String() string {
+	return c.bb.String()
+}
+
+// -- Output Filters
+
+func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, error) {
 	logrus.Info("Downloading Portworx...")
 
 	if err := di.PullImage(imageName); err != nil {
@@ -87,16 +140,30 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
 		err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
 		if err != nil {
-			return fmt.Errorf("Unable to create pwx directories: %s", err)
+			return true, fmt.Errorf("Unable to create pwx directories: %s", err)
 		}
 	}
 
+	reFilter := &regexFilter{re: rsyncRegex}
 	err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
-		[]string{ "/runc-entry-point.sh", "--debug" }, []string{"--upgrade-inplace"} )
+		[]string{"/runc-entry-point.sh", "--debug"}, []string{"--upgrade-inplace", "--info=stats2"}, reFilter)
 	if err != nil {
 		logrus.WithError(err).Error("Could not install ", imageName)
 		usage("Could not install " + imageName +
 			" - please inspect docker's log, and contact Portworx support.")
+	}
+
+	numTransferredFiles := -1
+	if len(reFilter.val) > 0 {
+		// get rid of ,'s: 25,455 -> 25455
+		matched := strings.Replace(string(reFilter.val), ",", "", -1)
+		numTransferredFiles, err = strconv.Atoi(matched)
+		if err != nil {
+			logrus.Warn("Could not find number of transferred files")
+			numTransferredFiles = -1 // reset, just in case
+		} else {
+			logrus.Infof("Number of transferred files: %d", numTransferredFiles)
+		}
 	}
 
 	logrus.Info("Installing Portworx...")
@@ -122,12 +189,27 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	// TODO: Add Labels?
 
-	if err = runExternal(args[0], args[1:]...); err != nil {
+	var out cachingOutput
+	if err = runExternalWithOutput(&out, args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
-		return err
+		return true, err
 	}
+	installOutput := out.String()
 
-	return nil
+	// figure out if update required
+	needsUpdate := false
+	if numTransferredFiles > 3 {
+		logrus.Infof("Portworx service restart required as %d files updated.", numTransferredFiles)
+		needsUpdate = true
+	} else if numTransferredFiles < 0 {
+		logrus.Info("Portworx service restart required as unknown number of files updated.")
+		needsUpdate = true
+	}
+	if isRestartRequired(installOutput) {
+		logrus.Info("Portworx service restart required due to configuration update.")
+		needsUpdate = true
+	}
+	return needsUpdate, nil
 }
 
 func validateMounts(mounts ...string) error {
@@ -170,7 +252,7 @@ func doInstall() {
 	if err != nil {
 		logrus.WithError(err).Error("Could not talk to Docker")
 		usage("Could not talk to Docker" +
-				" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
+			" - please restart using '-v /var/run/docker.sock:/var/run/docker.sock' option")
 	}
 
 	opts, err := di.ExtractConfig(id)
@@ -182,41 +264,57 @@ func doInstall() {
 
 	// TODO: Sanity checks for options
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
-
-	err = installPxFromOciImage(di, pxImage, opts)
+	isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
 		logrus.WithError(err).Error("Could not install Portworx service")
 		os.Exit(-1)
 	}
 
-	logrus.Info("Stopping Portworx service (if any)")
-	err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
-	logrus.WithError(err).Debugf("Stopping done")
+	if isRestartRequired {
+		logrus.Warn("Restarting portworx service")
+		logrus.Info("Stopping Portworx service (if any)")
+		err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
+		logrus.WithError(err).Debugf("Stopping done")
 
-	logrus.Info("Starting Portworx service")
-	err = runExternal("/bin/sh", "-c",
-		`systemctl daemon-reload && systemctl enable portworx && systemctl start portworx`)
-	if err != nil {
-		logrus.WithError(err).Error("Could not start Portworx service")
-		os.Exit(-1)
+		logrus.Info("Starting Portworx service")
+		err = runExternal("/bin/sh", "-c",
+			`systemctl daemon-reload && systemctl enable portworx && systemctl start portworx`)
+		if err != nil {
+			logrus.WithError(err).Error("Could not start Portworx service")
+			os.Exit(-1)
+		}
+	} else {
+		logrus.Info("Portworx service restart not required.")
 	}
 }
 
 func doUninstall() {
 	logrus.Info("Stopping Portworx service")
-	err := runExternal("/bin/sh", "-c",
+	var b bytes.Buffer
+	err := runExternalWithOutput(&b, "/bin/sh", "-c",
 		`systemctl stop portworx`)
 	if err != nil {
-		logrus.WithError(err).Error("Could not stop Portworx service")
-		os.Exit(-1) // NOTE: CRITICAL failure !!
+		strerr := b.String()
+		if strings.Contains(strerr, " not loaded") {
+			logrus.Info(strerr)
+		} else {
+			logrus.WithError(err).Error("Could not stop Portworx service")
+			os.Exit(-1) // NOTE: CRITICAL failure !!
+		}
 	}
 
 	logrus.Info("Disabling Portworx service")
-	err = runExternal("/bin/sh", "-c",
+	b.Reset()
+	err = runExternalWithOutput(&b, "/bin/sh", "-c",
 		`systemctl disable portworx`)
 	if err != nil {
-		logrus.WithError(err).Error("Could not disable Portworx service")
-		os.Exit(-1) // NOTE: CRITICAL failure !!
+		strerr := b.String()
+		if strings.Contains(strerr, "No such file or directory") {
+			logrus.Info("Portworx service already disabled")
+		} else {
+			logrus.WithError(err).Error("Could not disable Portworx service")
+			os.Exit(-1) // NOTE: CRITICAL failure !!
+		}
 	}
 
 	logrus.Info("Removing Portworx service bind-mount (if any)")
@@ -231,6 +329,91 @@ func doUninstall() {
 	if err != nil {
 		logrus.WithError(err).Warn("Could not remove all Portworx files")
 	}
+}
+
+// simplRuncState contains only the PID of the RunC's state JSON, rest is ignored
+type simplRuncState struct {
+	InitPid int `json:"init_process_pid"`
+	ignored json.RawMessage
+}
+
+// isRuncAlive checks if RunC and process-table have a registered process for given container name `cn`.
+func isRuncAlive(cn string) (bool, error) {
+	p := path.Join("/run/runc", cn, "state.json")
+	buf, err := ioutil.ReadFile(p)
+	if err == os.ErrNotExist {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+
+	var st simplRuncState
+	if err := json.Unmarshal(buf, &st); err != nil {
+		return false, fmt.Errorf("INTERNAL ERROR: Could not parse runc state: %s", err)
+	}
+
+	// NOTE: os.FindProcess(state.InitPid) never fails (even if process not there),
+	//      .. so let's inquire directly via procfs
+	p = path.Join("/proc", strconv.Itoa(st.InitPid), "stat")
+	buf, err = ioutil.ReadFile(p)
+	if err == os.ErrNotExist {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	if logrus.GetLevel() >= logrus.DebugLevel {
+		logrus.Debugf("found runc process ID %d: %s", st.InitPid, string(buf))
+	}
+	return true, nil
+}
+
+// isRestartRequired returns FALSE if no updates detected, or if only POD-mounts -specific updates are present.
+// It returns TRUE if spec is new, if input not parseable, or non POD-mounts -specific updates present.
+func isRestartRequired(in string) bool {
+	if strings.Index(in, "SPEC UNCHANGED ") > 0 {
+		return false
+	} else if strings.Index(in, "SPEC CREATED ") > 0 {
+		return true
+	}
+
+	search4 := " Updated mounts: add{"
+	addStartIdx := strings.Index(in, search4)
+	if addStartIdx > 0 {
+		addStartIdx += len(search4)
+		if endIdx := strings.Index(in[addStartIdx:], "}"); endIdx > 0 {
+			endIdx += addStartIdx
+			for _, p := range strings.Fields(in[addStartIdx:endIdx]) {
+				logrus.Debugf("add/%s/", p)
+				if !strings.HasPrefix(p, "/var/lib/kubelet/pods/") {
+					return true
+				}
+			}
+		} else {
+			logrus.Error("INTERNAL ERROR - found mounts add{ with no matching }")
+			return true
+		}
+	} else {
+		// reset -- we never found added mounts
+		addStartIdx = 0
+	}
+
+	search4 = " rm{"
+	if rmStartIdx := strings.Index(in[addStartIdx:], search4); rmStartIdx > 0 {
+		rmStartIdx += addStartIdx + len(search4)
+		if endIdx := strings.Index(in[rmStartIdx:], "}"); endIdx > 0 {
+			endIdx += rmStartIdx
+			for _, p := range strings.Fields(in[rmStartIdx:endIdx]) {
+				logrus.Debugf("rm/%s/", p)
+				if !strings.HasPrefix(p, "/var/lib/kubelet/pods/") {
+					return true
+				}
+			}
+		} else {
+			logrus.Error("INTERNAL ERROR - found mounts rm{ with no matching }")
+			return true
+		}
+	}
+	return false
 }
 
 func main() {
