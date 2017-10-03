@@ -5,7 +5,7 @@ metadata:
   namespace: kube-system
 ---
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1alpha1
+apiVersion: rbac.authorization.k8s.io/{{if .K8s8AndAbove}}v1{{else}}v1alpha1{{end}}
 metadata:
    name: node-get-put-list-role
 rules:
@@ -17,14 +17,14 @@ rules:
   verbs: ["get", "list"]
 ---
 kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1alpha1
+apiVersion: rbac.authorization.k8s.io/{{if .K8s8AndAbove}}v1{{else}}v1alpha1{{end}}
 metadata:
   name: node-role-binding
 subjects:
-- apiVersion: v1
-  kind: ServiceAccount
+- kind: ServiceAccount
   name: px-account
   namespace: kube-system
+  {{if .K8s8AndAbove}}{{else}}apiVersion: v1{{end}}
 roleRef:
   kind: ClusterRole
   name: node-get-put-list-role

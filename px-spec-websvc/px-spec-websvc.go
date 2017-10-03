@@ -9,11 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"text/template"
+	"regexp"
 )
 
 const (
 	currentPxImage = "portworx/px-enterprise:1.2.10"
 )
+
+var k8sVersionRegex, _ = regexp.Compile("v?(\\d+)\\.(\\d+)\\.(\\d+)")
 
 type Params struct {
 	Kvdb       string
@@ -32,10 +35,11 @@ type Params struct {
 	Openshift  string
 	PxImage    string
 	MasterLess bool
+	K8s8AndAbove bool
 }
 
 func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, master string) string {
+	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, master, k8sVersion string) string {
 
 	cwd, _ := os.Getwd()
 	p := filepath.Join(cwd, templateFile)
@@ -87,6 +91,13 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		masterless = false
 	}
 
+	k8s8AndAbove := false
+	if matches := k8sVersionRegex.FindStringSubmatch(k8sVersion); len(matches) == 4 {
+		if matches[1] == "1" && matches[2] == "8" {
+			k8s8AndAbove = true
+		}
+	}
+
 	params := Params{
 		Cluster:    cluster,
 		Kvdb:       kvdb,
@@ -104,6 +115,7 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		Openshift:  openshift,
 		PxImage:    pximage,
 		MasterLess: masterless,
+		K8s8AndAbove: k8s8AndAbove,
 	}
 
 	var result bytes.Buffer
@@ -136,13 +148,14 @@ func main() {
 		coreos := r.URL.Query().Get("coreos")
 		openshift := r.URL.Query().Get("openshift")
 		pximage := r.URL.Query().Get("pximage")
+		k8sVersion := r.URL.Query().Get("k8sVersion")
 
 		if len(zeroStorage) != 0 {
 			fmt.Fprintf(w, generate("k8s-flexvol-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, ""))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, "", k8sVersion))
 		} else {
 			fmt.Fprintf(w, generate("k8s-flexvol-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, ""))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, "", k8sVersion))
 		}
 	})
 
@@ -164,13 +177,14 @@ func main() {
 		coreos := r.URL.Query().Get("coreos")
 		pximage := r.URL.Query().Get("pximage")
 		master := r.URL.Query().Get("master")
+		k8sVersion := r.URL.Query().Get("k8sVersion")
 
-		if len(zeroStorage) != 0 && ( len(master) == 0 || master == "true" ) {
+		if len(zeroStorage) != 0 && (len(master) == 0 || master == "true") {
 			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master, k8sVersion))
 		} else {
 			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master, k8sVersion))
 		}
 	})
 
