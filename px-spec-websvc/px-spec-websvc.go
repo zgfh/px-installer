@@ -7,35 +7,68 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
-	"regexp"
 )
 
 const (
-	currentPxImage = "portworx/px-enterprise:1.2.10"
+	currentPxImage           = "portworx/px-enterprise:1.2.10"
+	currentPxLighthouseImage = "portworx/px-lighthouse:1.1.9"
 )
 
 var k8sVersionRegex, _ = regexp.Compile("v?(\\d+)\\.(\\d+)\\.(\\d+)")
 
 type Params struct {
-	Kvdb       string
-	Cluster    string
-	DIface     string
-	MIface     string
-	Drives     string
-	EtcdPasswd string
-	EtcdCa     string
-	EtcdCert   string
-	EtcdKey    string
-	Acltoken   string
-	Token      string
-	Env        string
-	Coreos     string
-	Openshift  string
-	PxImage    string
-	MasterLess bool
+	Kvdb         string
+	Cluster      string
+	DIface       string
+	MIface       string
+	Drives       string
+	EtcdPasswd   string
+	EtcdCa       string
+	EtcdCert     string
+	EtcdKey      string
+	Acltoken     string
+	Token        string
+	Env          string
+	Coreos       string
+	Openshift    string
+	PxImage      string
+	MasterLess   bool
 	K8s8AndAbove bool
+}
+
+type LighthouseParams struct {
+	Kvdb            string
+	EtcdPasswd      string
+	EtcdCa          string
+	EtcdCert        string
+	EtcdKey         string
+	EtcdAuth        string
+	AdminEmail      string
+	Company         string
+	LighthouseImage string
+}
+
+func getK8sEnvParam(env string) string {
+	if len(env) != 0 {
+		env = strings.Trim(env, " ")
+		if len(env) != 0 {
+			var envParam = "env:\n"
+			for _, e := range strings.Split(env, ",") {
+				entry := strings.SplitN(e, "=", 2)
+				if len(entry) == 2 {
+					key := entry[0]
+					val := entry[1]
+					envParam = envParam + "           - name: " + key + "\n"
+					envParam = envParam + "             value: " + val + "\n"
+				}
+			}
+			env = envParam
+		}
+	}
+	return env
 }
 
 func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
@@ -65,23 +98,6 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		}
 	}
 
-	if len(env) != 0 {
-		env = strings.Trim(env, " ")
-		if len(env) != 0 {
-			var envParam = "env:\n"
-			for _, e := range strings.Split(env, ",") {
-				entry := strings.SplitN(e, "=", 2)
-				if len(entry) == 2 {
-					key := entry[0]
-					val := entry[1]
-					envParam = envParam + "           - name: " + key + "\n"
-					envParam = envParam + "             value: " + val + "\n"
-				}
-			}
-			env = envParam
-		}
-	}
-
 	if pximage == "" {
 		pximage = currentPxImage
 	}
@@ -91,6 +107,8 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 		masterless = false
 	}
 
+	env = getK8sEnvParam(env)
+
 	k8s8AndAbove := false
 	if matches := k8sVersionRegex.FindStringSubmatch(k8sVersion); len(matches) == 4 {
 		if matches[1] == "1" && matches[2] == "8" {
@@ -99,22 +117,22 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 	}
 
 	params := Params{
-		Cluster:    cluster,
-		Kvdb:       kvdb,
-		DIface:     dataIface,
-		MIface:     mgmtIface,
-		Drives:     drives,
-		EtcdPasswd: etcdPasswd,
-		EtcdCa:     etcdCa,
-		EtcdCert:   etcdCert,
-		EtcdKey:    etcdKey,
-		Acltoken:   acltoken,
-		Token:      token,
-		Env:        env,
-		Coreos:     coreos,
-		Openshift:  openshift,
-		PxImage:    pximage,
-		MasterLess: masterless,
+		Cluster:      cluster,
+		Kvdb:         kvdb,
+		DIface:       dataIface,
+		MIface:       mgmtIface,
+		Drives:       drives,
+		EtcdPasswd:   etcdPasswd,
+		EtcdCa:       etcdCa,
+		EtcdCert:     etcdCert,
+		EtcdKey:      etcdKey,
+		Acltoken:     acltoken,
+		Token:        token,
+		Env:          env,
+		Coreos:       coreos,
+		Openshift:    openshift,
+		PxImage:      pximage,
+		MasterLess:   masterless,
 		K8s8AndAbove: k8s8AndAbove,
 	}
 
@@ -127,6 +145,65 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 	s := result.String()
 
 	return s
+}
+
+func generateForLigthouse(w http.ResponseWriter, r *http.Request) {
+	kvdb := r.URL.Query().Get("kvdb")
+	etcdPasswd := r.URL.Query().Get("etcdPasswd")
+	etcdCa := r.URL.Query().Get("etcdCa")
+	etcdCert := r.URL.Query().Get("etcdCert")
+	etcdKey := r.URL.Query().Get("etcdKey")
+	etcdAuth := r.URL.Query().Get("etcdAuth")
+	adminEmail := r.URL.Query().Get("adminEmail")
+	company := r.URL.Query().Get("company")
+	lighthouseImage := r.URL.Query().Get("lighthouseImage")
+
+	templateFile := "k8s-portworx-lighthouse.gtpl"
+	cwd, _ := os.Getwd()
+	p := filepath.Join(cwd, templateFile)
+
+	t, err := template.ParseFiles(p)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+
+	if lighthouseImage == "" {
+		lighthouseImage = currentPxLighthouseImage
+	}
+
+	etcdPasswd = getK8sEnvParam("PWX_KVDB_USER_PWD=" + etcdPasswd)
+	etcdCa = getK8sEnvParam("PWX_KVDB_CA_PATH=" + etcdCa)
+	etcdCert = getK8sEnvParam("PWX_KVDB_USER_CERT_PATH=" + etcdCert)
+	etcdKey = getK8sEnvParam("PWX_KVDB_USER_CERT_KEY_PATH=" + etcdKey)
+	etcdAuth = getK8sEnvParam("PWX_KVDB_AUTH=" + etcdAuth)
+	if company == "" {
+		company = "Portworx"
+	}
+	company = getK8sEnvParam("PWX_PX_COMPANY_NAME=" + company)
+	adminEmail = getK8sEnvParam("PWX_PX_ADMIN_EMAIL=" + adminEmail)
+
+	params := LighthouseParams{
+		Kvdb:            kvdb,
+		EtcdPasswd:      etcdPasswd,
+		EtcdCa:          etcdCa,
+		EtcdCert:        etcdCert,
+		EtcdKey:         etcdKey,
+		AdminEmail:      adminEmail,
+		Company:         company,
+		LighthouseImage: lighthouseImage,
+		EtcdAuth:        etcdAuth,
+	}
+
+	var result bytes.Buffer
+	err = t.Execute(&result, params)
+	if err != nil {
+		log.Println(err)
+		fmt.Fprintf(w, "Unable to parse query params: %v", err)
+	}
+
+	s := result.String()
+	fmt.Fprintf(w, s)
 }
 
 func main() {
@@ -187,6 +264,8 @@ func main() {
 				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master, k8sVersion))
 		}
 	})
+
+	http.HandleFunc("/lighthouse", generateForLigthouse)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
