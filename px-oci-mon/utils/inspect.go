@@ -24,6 +24,7 @@ type SimpleContainerConfig struct {
 const cgroupFileName = "/proc/self/cgroup"
 
 var (
+	// ErrContainerNotFound returned when no container can be found
 	ErrContainerNotFound = errors.New("container not found")
 	containerIDre        = regexp.MustCompilePOSIX(`[0-9]+:name=.*[/-]([0-9a-f]{64})`)
 )

@@ -55,7 +55,7 @@ func (di *DockerInstaller) PullImage(name string) error {
 }
 
 // RunOnce will create container, run it, wait until it's finished, and finally remove it.
-func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string) error {
+func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string, logWriter io.Writer) error {
 	contConf := container.Config{
 		Image:        name,
 		Cmd:          args,
@@ -116,7 +116,10 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	if err != nil {
 		retError = fmt.Errorf("Could not get logs for container %s [%s]: %s", resp.ID, name, err)
 	}
-	io.Copy(os.Stdout, out)
+	if logWriter == nil {
+		logWriter = os.Stderr
+	}
+	io.Copy(logWriter, out)
 
 	if retError == nil {
 		logrus.Infof("Removing container %s [%s]", resp.ID, name)

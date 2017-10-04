@@ -47,7 +47,7 @@ TARGETS += px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
 # BUILD RULES
 #
 
-.PHONY: all deploy clean distclean vendor-pull px-container
+.PHONY: all deploy rmi clean distclean vendor-pull px-container
 
 all: $(TARGETS)
 
@@ -104,11 +104,13 @@ endif
 	$(SUDO) docker push $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
 endif
 
-clean:
-	rm -f $(TARGETS)
+rmi:
 	-$(SUDO) docker rmi -f $(WEBSVC_IMG) $(OCIMON_IMG) \
 	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_OCIMON_IMAGE):latest \
 	    $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):latest
 
-distclean: clean
+clean:
+	rm -f $(TARGETS)
+
+distclean: rmi clean
 	@rm -fr vendor/github.com vendor/golang.org
