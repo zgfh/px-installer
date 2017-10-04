@@ -39,6 +39,14 @@ INFO[0000] PX-RunC env: PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/
 INFO[0000] Successfully written /etc/systemd/system/portworx.service`, false},
 	}
 
+	origFn := getKubernetesRootDirFn
+	getKubernetesRootDirFn = func() (string, error) {
+		return "/var/lib/kubelet", nil
+	}
+	defer func() {
+		getKubernetesRootDirFn = origFn
+	}()
+
 	for _, v := range data {
 		assert.Equal(t, v.expectation, isRestartRequired(v.log),
 			"Was expecting isRestartRequired()=%v for `%s`", v.expectation, v.log)

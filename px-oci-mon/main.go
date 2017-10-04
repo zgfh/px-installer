@@ -2,13 +2,10 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/exec"
-	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -29,7 +26,12 @@ const (
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
 )
 
-var rsyncRegex = regexp.MustCompilePOSIX(`Number of regular files transferred: ([0-9,]+)`)
+var (
+	// rsyncRegex extracts '# files transferred' from rsync's stat/stat2 report
+	rsyncRegex = regexp.MustCompilePOSIX(`Number of regular files transferred: ([0-9,]+)`)
+	// xtractKubeletRegex extracts /var/kubelet -override from running kubelet daemon
+	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
+)
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
 func usage(args ...interface{}) {
@@ -224,7 +226,7 @@ func validateMounts(mounts ...string) error {
 		if err != nil {
 			return fmt.Errorf("File/Directory %s not found (%s) - please mount via 'run -v ...' option", m, err)
 		} else if st0.Dev == st1.Dev {
-			return fmt.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m, err)
+			return fmt.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m)
 		}
 	}
 	return nil
@@ -331,41 +333,24 @@ func doUninstall() {
 	}
 }
 
-// simplRuncState contains only the PID of the RunC's state JSON, rest is ignored
-type simplRuncState struct {
-	InitPid int `json:"init_process_pid"`
-	ignored json.RawMessage
+// getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
+func getKubernetesRootDir() (string, error) {
+	var out cachingOutput
+	args := strings.Fields(`/bin/ps --no-headers -o cmd -C kubelet`)
+	if err := runExternalWithOutput(&out, args[0], args[1:]...); err != nil {
+		err = fmt.Errorf("Could not find kubelet service: %s", err)
+		return "", err
+	}
+	m := xtractKubeletRegex.FindAllStringSubmatch(out.String(), -1)
+	if len(m) > 0 && len(m[0]) > 1 {
+		return m[0][1], nil
+	}
+	// return default value
+	return "/var/lib/kubelet", nil
 }
 
-// isRuncAlive checks if RunC and process-table have a registered process for given container name `cn`.
-func isRuncAlive(cn string) (bool, error) {
-	p := path.Join("/run/runc", cn, "state.json")
-	buf, err := ioutil.ReadFile(p)
-	if err == os.ErrNotExist {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-
-	var st simplRuncState
-	if err := json.Unmarshal(buf, &st); err != nil {
-		return false, fmt.Errorf("INTERNAL ERROR: Could not parse runc state: %s", err)
-	}
-
-	// NOTE: os.FindProcess(state.InitPid) never fails (even if process not there),
-	//      .. so let's inquire directly via procfs
-	p = path.Join("/proc", strconv.Itoa(st.InitPid), "stat")
-	buf, err = ioutil.ReadFile(p)
-	if err == os.ErrNotExist {
-		return false, nil
-	} else if err != nil {
-		return false, err
-	}
-	if logrus.GetLevel() >= logrus.DebugLevel {
-		logrus.Debugf("found runc process ID %d: %s", st.InitPid, string(buf))
-	}
-	return true, nil
-}
+// used for unit-tests
+var getKubernetesRootDirFn = getKubernetesRootDir
 
 // isRestartRequired returns FALSE if no updates detected, or if only POD-mounts -specific updates are present.
 // It returns TRUE if spec is new, if input not parseable, or non POD-mounts -specific updates present.
@@ -376,6 +361,14 @@ func isRestartRequired(in string) bool {
 		return true
 	}
 
+	// find proper location for "/var/lib/kubelet/pods/"
+	kubeletPodsDir, err := getKubernetesRootDirFn()
+	if err != nil {
+		logrus.WithError(err).Error("Error scanning kubelet process")
+		return true
+	}
+	kubeletPodsDir += "/pods/"
+
 	search4 := " Updated mounts: add{"
 	addStartIdx := strings.Index(in, search4)
 	if addStartIdx > 0 {
@@ -384,7 +377,7 @@ func isRestartRequired(in string) bool {
 			endIdx += addStartIdx
 			for _, p := range strings.Fields(in[addStartIdx:endIdx]) {
 				logrus.Debugf("add/%s/", p)
-				if !strings.HasPrefix(p, "/var/lib/kubelet/pods/") {
+				if !strings.HasPrefix(p, kubeletPodsDir) {
 					return true
 				}
 			}
@@ -404,7 +397,7 @@ func isRestartRequired(in string) bool {
 			endIdx += rmStartIdx
 			for _, p := range strings.Fields(in[rmStartIdx:endIdx]) {
 				logrus.Debugf("rm/%s/", p)
-				if !strings.HasPrefix(p, "/var/lib/kubelet/pods/") {
+				if !strings.HasPrefix(p, kubeletPodsDir) {
 					return true
 				}
 			}
