@@ -133,6 +133,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
             {{- end}}
       restartPolicy: Always
       serviceAccountName: px-account
@@ -169,6 +171,9 @@ spec:
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins
+        - name: hostproc
+          hostPath:
+            path: /proc
         {{- end}}
 ---
 apiVersion: extensions/v1beta1
@@ -258,6 +263,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
             {{- end}}
       restartPolicy: Always
       serviceAccountName: px-account
@@ -294,4 +301,7 @@ spec:
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins
+        - name: hostproc
+          hostPath:
+            path: /proc
         {{- end}}

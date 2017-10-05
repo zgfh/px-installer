@@ -130,6 +130,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
             {{- end}}
       restartPolicy: Always
       {{if .MasterLess}}{{else}}tolerations:
@@ -169,4 +171,7 @@ spec:
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins
+        - name: hostproc
+          hostPath:
+            path: /proc
         {{- end}}
