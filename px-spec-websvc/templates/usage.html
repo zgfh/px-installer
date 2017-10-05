@@ -73,7 +73,7 @@
     height="85">
   <h1><a href="https://docs.portworx.com/scheduler/kubernetes/install.html#install">Portworx configuration form for Kubernetes</a></h1>
 
-  <form id="my-form">
+  <form id="px-form">
     <table BORDER="1">
       <tr>
         <th>Value</th>
@@ -84,22 +84,22 @@
       </tr>
       <tr>
         <td>
-          <SELECT NAME="typ" onChange="testSelect(this.form)">
+          <SELECT NAME="type" onChange="proc(this.form)">
             <OPTION value="dock">Docker container</OPTION>
             <OPTION value="oci">OCI container</OPTION>
           </SELECT>
         </td>
-        <td><code>typ:</code> Select Portworx deployment type.</td>
+        <td><code>type:</code> Select Portworx deployment type.</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="c" VALUE="test_cluster" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="c" VALUE="test_cluster" onChange="proc(this.form)">
         </td>
         <td><code>c:</code> Specifies the unique name for the Portworx cluster. (example: <var>test_cluster</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="k" VALUE="etcd:http://etc.fake.net:2379" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="k" VALUE="etcd:http://etc.fake.net:2379" onChange="proc(this.form)">
         </td>
         <td><code>k:</code> Points to your key value database, such as an etcd cluster or a consul cluster. (example: <var>etcd:http(s)://etcd.fake.net:2379</var>)</td>
       </tr>
@@ -108,39 +108,39 @@
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="s" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="s" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>s:</code> Specify comma-separated list of drives. (example: <var>/dev/sdb,/dev/sdc</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="d" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="d" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>d:</code> Specifies the data interface. This is useful if your instances have non-standard network interfaces.
           (example: <var>eth1</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="m" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="m" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>m:</code> Specifies the management interface. This is useful if your instances have non-standard network
           interfaces. (example: <var>eth1</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="co" onClick="testSelect(this.form)"></td>
-        <td><code>co:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
+        <td><input type="checkbox" NAME="cos" onClick="proc(this.form)"></td>
+        <td><code>cos:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="mas" onClick="testSelect(this.form)"></td>
+        <td><input type="checkbox" NAME="mas" onClick="proc(this.form)"></td>
         <td><code>mas:</code> If true, PX will run on the master node. For Kubernetes 1.6.4 and prior, this needs to be true
           (default is false) (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="z" onClick="testSelect(this.form)"></td>
+        <td><input type="checkbox" NAME="z" onClick="proc(this.form)"></td>
         <td><code>z:</code> Instructs PX to run in zero storage mode on kubernetes master. (example: <var>true</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="f" onClick="testSelect(this.form)"></td>
+        <td><input type="checkbox" NAME="f" onClick="proc(this.form)"></td>
         <td><code>f:</code> Instructs PX to use any available, unused and unmounted drives or partitions. PX will never
           use a drive or partition that is mounted. (example: <var>true</var>)</td>
       </tr>
@@ -149,31 +149,31 @@
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="pwd" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="pwd" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>pwd:</code> Username and password for ETCD authentication in the form user:password (example: <var>username:password</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="ca" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="ca" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>ca:</code> Location of CA file for ETCD authentication. (example: <var>/path/to/server.ca</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="cert" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="cert" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>cert:</code> Location of certificate for ETCD authentication. (example: <var>/path/to/server.crt</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="key" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="key" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>key:</code> Location of certificate key for ETCD authentication. (example: <var>/path/to/server.key</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="acl" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="acl" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>acl:</code> ACL token value used for Consul authentication. (example: <var>398073a8-5091-4d9c-871a-bbbeb030d1f6</var>)</td>
       </tr>
@@ -182,13 +182,13 @@
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="t" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="t" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>t:</code> Portworx lighthouse token for cluster. (example: <var>a980f3a8-5091-4d9c-871a-cbbeb030d1e6</var>)</td>
       </tr>
       <tr>
         <td>
-          <INPUT TYPE="text" NAME="e" VALUE="" onChange="testSelect(this.form)">
+          <INPUT TYPE="text" NAME="e" VALUE="" onChange="proc(this.form)">
         </td>
         <td><code>e:</code> Comma-separated list of environment variables that will be exported to portworx. (example: <var>API_SERVER=http://lighthouse-new.portworx.com</var>)</td>
         <tr>
@@ -200,13 +200,18 @@
 </body>
 
 <script LANGUAGE="JavaScript">
-  function testSelect(form) {
+  function proc(form) {
     var elements = form.elements
     var sep = "?"
     var s = ""
     for (var i = 0, el; el = elements[i++];) {
       if ((el.type === "text" && el.value != "") || (el.type === "select-one")) {
-        s += sep + el.name + "=" + el.value.replace(/=/g, '%3D')
+        s += sep + el.name + "="
+        if (el.name == "e" || el.name == "env") {
+          s += encodeURIComponent(el.value)
+        } else {
+          s += el.value
+        }
         sep = "&"
       } else if (el.type === "checkbox" && el.checked) {
         s += sep + el.name + "=true"
@@ -217,7 +222,7 @@
     k.innerHTML = "kubectl apply -f '<a href=\"" + s + "\">" + s + "</a>'"
   }
 
-  testSelect(document.getElementById("my-form"));
+  proc(document.getElementById("px-form"));
 </script>
 
 </html>

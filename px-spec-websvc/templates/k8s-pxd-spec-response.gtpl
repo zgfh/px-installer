@@ -78,19 +78,19 @@ spec:
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
-             [{{if .IsRunC}}"install", {{end}}
-              {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
-              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
-              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
-              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
-              {{- if .Drives}}{{.Drives}}{{end}},
-              {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
-              {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
-              {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
-              {{- if .EtcdKey}}"-key", "{{.EtcdKey}}", {{end}}
-              {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
-              {{- if .Token}}"-t", "{{.Token}}",{{end}}
-              "-x", "kubernetes"]
+            [{{if .IsRunC}}"install", {{end}}
+             {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
+             {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
+             {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
+             {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
+             {{- if .Drives}}{{.Drives}}{{end}},
+             {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
+             {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
+             {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
+             {{- if .EtcdKey}}"-key", "{{.EtcdKey}}", {{end}}
+             {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
+             {{- if .Token}}"-t", "{{.Token}}",{{end}}
+             "-x", "kubernetes"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             periodSeconds: 30

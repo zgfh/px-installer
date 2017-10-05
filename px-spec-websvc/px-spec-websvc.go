@@ -25,14 +25,14 @@ const (
 var emptyParams = Params{MasterLess: false, IsRunC: false}
 
 type Params struct {
+	Type        string `schema:"type" deprecated:"installType"`
 	Cluster     string `schema:"c"    deprecated:"cluster"`
 	Kvdb        string `schema:"k"    deprecated:"kvdb"`
-	Type        string `schema:"typ"  deprecated:"type"`
 	Drives      string `schema:"s"    deprecated:"drives"`
 	DIface      string `schema:"d"    deprecated:"diface"`
 	MIface      string `schema:"m"    deprecated:"miface"`
-	Coreos      string `schema:"co"   deprecated:"coreos"`
-	Master      string `schema:"m"    deprecated:"master"`
+	Coreos      string `schema:"cos"  deprecated:"coreos"`
+	Master      string `schema:"mas"  deprecated:"master"`
 	ZeroStorage string `schema:"z"    deprecated:"zeroStorage"`
 	Force       string `schema:"f"    deprecated:"force"`
 	EtcdPasswd  string `schema:"pwd"  deprecated:"etcdPasswd"`
@@ -81,17 +81,20 @@ func generate(templateFile string, p *Params) (string, error) {
 	if len(p.Env) != 0 {
 		p.Env = strings.Trim(p.Env, " ")
 		if len(p.Env) != 0 {
-			var envParam = "env:\n"
+			var b bytes.Buffer
+			b.WriteString("env:\n")
 			for _, e := range strings.Split(p.Env, ",") {
 				entry := strings.SplitN(e, "=", 2)
 				if len(entry) == 2 {
-					key := entry[0]
-					val := entry[1]
-					envParam = envParam + "           - name: " + key + "\n"
-					envParam = envParam + "             value: " + val + "\n"
+					b.WriteString(`            - name: "`)
+					b.WriteString(entry[0])
+					b.WriteString("\"\n")
+					b.WriteString(`              value: "`)
+					b.WriteString(entry[1])
+					b.WriteString("\"\n")
 				}
 			}
-			p.Env = envParam
+			p.Env = b.String()
 		}
 	}
 
