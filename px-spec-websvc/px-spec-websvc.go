@@ -147,7 +147,7 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 	return s
 }
 
-func generateForLigthouse(w http.ResponseWriter, r *http.Request) {
+func generateForLighthouse(w http.ResponseWriter, r *http.Request) {
 	kvdb := r.URL.Query().Get("kvdb")
 	etcdPasswd := r.URL.Query().Get("etcdPasswd")
 	etcdCa := r.URL.Query().Get("etcdCa")
@@ -165,6 +165,7 @@ func generateForLigthouse(w http.ResponseWriter, r *http.Request) {
 	t, err := template.ParseFiles(p)
 	if err != nil {
 		log.Println(err)
+		fmt.Fprintf(w, "Failed to parse file: %v", err)
 		return
 	}
 
@@ -172,16 +173,24 @@ func generateForLigthouse(w http.ResponseWriter, r *http.Request) {
 		lighthouseImage = currentPxLighthouseImage
 	}
 
-	etcdPasswd = getK8sEnvParam("PWX_KVDB_USER_PWD=" + etcdPasswd)
-	etcdCa = getK8sEnvParam("PWX_KVDB_CA_PATH=" + etcdCa)
-	etcdCert = getK8sEnvParam("PWX_KVDB_USER_CERT_PATH=" + etcdCert)
-	etcdKey = getK8sEnvParam("PWX_KVDB_USER_CERT_KEY_PATH=" + etcdKey)
-	etcdAuth = getK8sEnvParam("PWX_KVDB_AUTH=" + etcdAuth)
+	addEnvParam := func(key, value string) string {
+		if value == "" {
+			return ""
+		}
+		str := "- name: " + key + "\n"
+		str = str + "          value: \"" + value + "\""
+		return str
+	}
+	etcdPasswd = addEnvParam("PWX_KVDB_USER_PWD", etcdPasswd)
+	etcdCa = addEnvParam("PWX_KVDB_CA_PATH", etcdCa)
+	etcdCert = addEnvParam("PWX_KVDB_USER_CERT_PATH", etcdCert)
+	etcdKey = addEnvParam("PWX_KVDB_USER_CERT_KEY_PATH", etcdKey)
+	etcdAuth = addEnvParam("PWX_KVDB_AUTH", etcdAuth)
 	if company == "" {
 		company = "Portworx"
 	}
-	company = getK8sEnvParam("PWX_PX_COMPANY_NAME=" + company)
-	adminEmail = getK8sEnvParam("PWX_PX_ADMIN_EMAIL=" + adminEmail)
+	company = addEnvParam("PWX_PX_COMPANY_NAME", company)
+	adminEmail = addEnvParam("PWX_PX_ADMIN_EMAIL", adminEmail)
 
 	params := LighthouseParams{
 		Kvdb:            kvdb,
@@ -265,7 +274,7 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/lighthouse", generateForLigthouse)
+	http.HandleFunc("/lighthouse", generateForLighthouse)
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }

@@ -93,7 +93,7 @@ spec:
         - /bin/bash
         - /lighthouse/on-prem-entrypoint.sh
         - -k
-        "{{if .Kvdb}}- {{.Kvdb}}{{end}}"
+        {{if .Kvdb}}- {{.Kvdb}}{{end}}
         - -d
         - http://admin:password@influx-px:8086
         env:
@@ -105,12 +105,13 @@ spec:
           value: '"password"'
         - name: PWX_PX_PRECREATE_ADMIN
           value: "true"
-          {{if .EtcdPasswd}}{{.EtcdPasswd}}{{end}}
-          {{if .EtcdCa}}{{.EtcdCa}}{{end}}
-          {{if .EtcdCert}}{{.EtcdCert}}{{end}}
-          {{if .EtcdKey}}{{.EtcdKey}}{{end}}
-          {{if .AdminEmail}}{{.AdminEmail}}{{end}}
-          {{if .Company}}{{.Company}}{{end}}
+        {{if .EtcdPasswd}}{{.EtcdPasswd}}{{end}}
+        {{if .EtcdCa}}{{.EtcdCa}}{{end}}
+        {{if .EtcdCert}}{{.EtcdCert}}{{end}}
+        {{if .EtcdKey}}{{.EtcdKey}}{{end}}
+        {{if .AdminEmail}}{{.AdminEmail}}{{end}}
+        {{if .Company}}{{.Company}}{{end}}
+        {{if .EtcdAuth}}{{.EtcdAuth}}{{end}}
         image: {{.LighthouseImage}}
         name: px-lighthouse
         ports:
