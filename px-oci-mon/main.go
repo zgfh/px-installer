@@ -31,6 +31,7 @@ var (
 	rsyncRegex = regexp.MustCompilePOSIX(`Number of regular files transferred: ([0-9,]+)`)
 	// xtractKubeletRegex extracts /var/kubelet -override from running kubelet daemon
 	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
+	debugsOn = false
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -147,8 +148,13 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	}
 
 	reFilter := &regexFilter{re: rsyncRegex}
+	args := []string{"--upgrade-inplace", "--info=stats2"}
+	if debugsOn {
+		// do verbose rsync if debug is turned on
+		args = append(args, "-v")
+	}
 	err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
-		[]string{"/runc-entry-point.sh", "--debug"}, []string{"--upgrade-inplace", "--info=stats2"}, reFilter)
+		[]string{"/runc-entry-point.sh", "--debug"}, args, reFilter)
 	if err != nil {
 		logrus.WithError(err).Error("Could not install ", imageName)
 		usage("Could not install " + imageName +
@@ -171,7 +177,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	logrus.Info("Installing Portworx...")
 
 	// Compose startup-line for PX-RunC
-	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
+	args = make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
 	args = append(args, "/opt/pwx/bin/px-runc", "install")
 	args = append(args, cfg.Args[1:]...)
 
@@ -414,7 +420,15 @@ func main() {
 		usage("First argument must be <install|uninstall>")
 	}
 
-	if (len(os.Args) > 2 && os.Args[2] == "--debug") || os.Getenv("DEBUG") != "" {
+	if debugsOn = os.Getenv("DEBUG") != ""; !debugsOn {
+		for _, v := range os.Args[1:] {
+			if v == "--debug" {
+				debugsOn = true
+				break
+			}
+		}
+	}
+	if debugsOn {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
