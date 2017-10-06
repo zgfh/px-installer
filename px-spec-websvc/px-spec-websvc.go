@@ -31,6 +31,7 @@ type Params struct {
 	Drives      string `schema:"s"    deprecated:"drives"`
 	DIface      string `schema:"d"    deprecated:"diface"`
 	MIface      string `schema:"m"    deprecated:"miface"`
+	KubeVer     string `schema:"kv"   deprecated:"k8sVersion"`
 	Coreos      string `schema:"cos"  deprecated:"coreos"`
 	Master      string `schema:"mas"  deprecated:"master"`
 	ZeroStorage string `schema:"z"    deprecated:"zeroStorage"`
@@ -101,6 +102,7 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
 	p.MasterLess = (p.Master != "true")
 
+	// select PX-Image
 	if p.PxImage == "" {
 		p.PxImage = currentPxImage
 		if p.IsRunC {

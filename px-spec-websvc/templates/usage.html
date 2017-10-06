@@ -116,15 +116,21 @@
         <td>
           <INPUT TYPE="text" NAME="d" VALUE="" onChange="proc(this.form)">
         </td>
-        <td><code>d:</code> Specifies the data interface. This is useful if your instances have non-standard network interfaces.
+        <td><code>d:</code> Specify data network interface. This is useful if your instances have non-standard network interfaces.
           (example: <var>eth1</var>)</td>
       </tr>
       <tr>
         <td>
           <INPUT TYPE="text" NAME="m" VALUE="" onChange="proc(this.form)">
         </td>
-        <td><code>m:</code> Specifies the management interface. This is useful if your instances have non-standard network
+        <td><code>m:</code> Specify management network interface. This is useful if your instances have non-standard network
           interfaces. (example: <var>eth1</var>)</td>
+      </tr>
+      <tr>
+        <td>
+          <INPUT TYPE="text" NAME="kv" VALUE="" onChange="proc(this.form)">
+        </td>
+        <td><code>kv:</code> Specify Kubernetes version (default is 1.7) (example: <var>1.8.0</var>)</td>
       </tr>
       <tr>
         <td><input type="checkbox" NAME="cos" onClick="proc(this.form)"></td>
@@ -132,12 +138,12 @@
       </tr>
       <tr>
         <td><input type="checkbox" NAME="mas" onClick="proc(this.form)"></td>
-        <td><code>mas:</code> If true, PX will run on the master node. For Kubernetes 1.6.4 and prior, this needs to be true
-          (default is false) (example: <var>true</var>)</td>
+        <td><code>mas:</code> Specify if PX should run on the Kubernetes master node. For Kubernetes 1.6.4 and prior,
+          this needs to be true (default is false) (example: <var>true</var>)</td>
       </tr>
       <tr>
         <td><input type="checkbox" NAME="z" onClick="proc(this.form)"></td>
-        <td><code>z:</code> Instructs PX to run in zero storage mode on kubernetes master. (example: <var>true</var>)</td>
+        <td><code>z:</code> Instructs PX to run in zero storage mode on Kubernetes master. (example: <var>true</var>)</td>
       </tr>
       <tr>
         <td><input type="checkbox" NAME="f" onClick="proc(this.form)"></td>
