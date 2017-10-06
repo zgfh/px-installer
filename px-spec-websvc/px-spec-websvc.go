@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
-	"regexp"
 )
 
 const (
@@ -19,27 +19,29 @@ const (
 var k8sVersionRegex, _ = regexp.Compile("v?(\\d+)\\.(\\d+)\\.(\\d+)")
 
 type Params struct {
-	Kvdb       string
-	Cluster    string
-	DIface     string
-	MIface     string
-	Drives     string
-	EtcdPasswd string
-	EtcdCa     string
-	EtcdCert   string
-	EtcdKey    string
-	Acltoken   string
-	Token      string
-	Env        string
-	Coreos     string
-	Openshift  string
-	PxImage    string
-	MasterLess bool
-	K8s8AndAbove bool
+	Kvdb             string
+	Cluster          string
+	DIface           string
+	MIface           string
+	Drives           string
+	EtcdPasswd       string
+	EtcdCa           string
+	EtcdCert         string
+	EtcdKey          string
+	Acltoken         string
+	Token            string
+	Env              string
+	Coreos           string
+	Openshift        string
+	PxImage          string
+	MasterLess       bool
+	K8s8AndAbove     bool
+	SecretType       string
+	ClusterSecretKey string
 }
 
-func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd,
-	etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, master, k8sVersion string) string {
+func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey,
+	acltoken, token, env, coreos, openshift, pximage, master, k8sVersion, secretType, clusterSecretKey string) string {
 
 	cwd, _ := os.Getwd()
 	p := filepath.Join(cwd, templateFile)
@@ -99,23 +101,25 @@ func generate(templateFile, kvdb, cluster, dataIface, mgmtIface, drives, force, 
 	}
 
 	params := Params{
-		Cluster:    cluster,
-		Kvdb:       kvdb,
-		DIface:     dataIface,
-		MIface:     mgmtIface,
-		Drives:     drives,
-		EtcdPasswd: etcdPasswd,
-		EtcdCa:     etcdCa,
-		EtcdCert:   etcdCert,
-		EtcdKey:    etcdKey,
-		Acltoken:   acltoken,
-		Token:      token,
-		Env:        env,
-		Coreos:     coreos,
-		Openshift:  openshift,
-		PxImage:    pximage,
-		MasterLess: masterless,
-		K8s8AndAbove: k8s8AndAbove,
+		Cluster:          cluster,
+		Kvdb:             kvdb,
+		DIface:           dataIface,
+		MIface:           mgmtIface,
+		Drives:           drives,
+		EtcdPasswd:       etcdPasswd,
+		EtcdCa:           etcdCa,
+		EtcdCert:         etcdCert,
+		EtcdKey:          etcdKey,
+		Acltoken:         acltoken,
+		Token:            token,
+		Env:              env,
+		Coreos:           coreos,
+		Openshift:        openshift,
+		PxImage:          pximage,
+		MasterLess:       masterless,
+		K8s8AndAbove:     k8s8AndAbove,
+		SecretType:       secretType,
+		ClusterSecretKey: clusterSecretKey,
 	}
 
 	var result bytes.Buffer
@@ -148,14 +152,15 @@ func main() {
 		coreos := r.URL.Query().Get("coreos")
 		openshift := r.URL.Query().Get("openshift")
 		pximage := r.URL.Query().Get("pximage")
-		k8sVersion := r.URL.Query().Get("k8sVersion")
 
 		if len(zeroStorage) != 0 {
 			fmt.Fprintf(w, generate("k8s-flexvol-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, "", k8sVersion))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift,
+				pximage, "", "", "", ""))
 		} else {
 			fmt.Fprintf(w, generate("k8s-flexvol-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift, pximage, "", k8sVersion))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, openshift,
+				pximage, "", "", "", ""))
 		}
 	})
 
@@ -178,13 +183,17 @@ func main() {
 		pximage := r.URL.Query().Get("pximage")
 		master := r.URL.Query().Get("master")
 		k8sVersion := r.URL.Query().Get("k8sVersion")
+		secretType := r.URL.Query().Get("secretType")
+		clusterSecretKey := r.URL.Query().Get("clusterSecretKey")
 
 		if len(zeroStorage) != 0 && (len(master) == 0 || master == "true") {
 			fmt.Fprintf(w, generate("k8s-master-worker-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master, k8sVersion))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "",
+				pximage, master, k8sVersion, secretType, clusterSecretKey))
 		} else {
 			fmt.Fprintf(w, generate("k8s-pxd-spec-response.gtpl", kvdb, cluster, dataIface, mgmtIface,
-				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "", pximage, master, k8sVersion))
+				drives, force, etcdPasswd, etcdCa, etcdCert, etcdKey, acltoken, token, env, coreos, "",
+				pximage, master, k8sVersion, secretType, clusterSecretKey))
 		}
 	})
 
