@@ -5,7 +5,7 @@ metadata:
   namespace: kube-system
 ---
 kind: ClusterRole
-apiVersion: rbac.authorization.k8s.io/v1alpha1
+apiVersion: rbac.authorization.k8s.io/{{if ge .KubeVer "1.8"}}v1{{else}}v1alpha1{{end}}
 metadata:
    name: node-get-put-list-role
 rules:
@@ -17,12 +17,16 @@ rules:
   verbs: ["get", "list"]
 ---
 kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1alpha1
+apiVersion: rbac.authorization.k8s.io/{{if ge .KubeVer "1.8"}}v1{{else}}v1alpha1{{end}}
 metadata:
   name: node-role-binding
 subjects:
+{{- if ge .KubeVer "1.8"}}
+- kind: ServiceAccount
+{{- else}}
 - apiVersion: v1
   kind: ServiceAccount
+{{- end}}
   name: px-account
   namespace: kube-system
 roleRef:
@@ -78,19 +82,19 @@ spec:
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
-             [{{if .IsRunC}}"install", {{end}}
-              {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
-              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
-              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
-              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
-              {{- if .Drives}}{{.Drives}}{{end}},
-              {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
-              {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
-              {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
-              {{- if .EtcdKey}}"-key", "{{.EtcdKey}}", {{end}}
-              {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
-              {{- if .Token}}"-t", "{{.Token}}",{{end}}
-              "-x", "kubernetes"]
+            [{{if .IsRunC}}"install", {{end}}
+             {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
+             {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
+             {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
+             {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
+             {{- if .Drives}}{{.Drives}}{{end}},
+             {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
+             {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
+             {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
+             {{- if .EtcdKey}}"-key", "{{.EtcdKey}}", {{end}}
+             {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
+             {{- if .Token}}"-t", "{{.Token}}",{{end}}
+             "-x", "kubernetes"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             periodSeconds: 30
@@ -130,6 +134,8 @@ spec:
               mountPath: {{if .Coreos}}/lib/modules{{else}}/usr/src{{end}}
             - name: dockerplugins
               mountPath: /run/docker/plugins
+            - name: hostproc
+              mountPath: /hostproc
             {{- end}}
       restartPolicy: Always
       {{if .MasterLess}}{{else}}tolerations:
@@ -169,4 +175,7 @@ spec:
         - name: dockerplugins
           hostPath:
             path: /run/docker/plugins
+        - name: hostproc
+          hostPath:
+            path: /proc
         {{- end}}
