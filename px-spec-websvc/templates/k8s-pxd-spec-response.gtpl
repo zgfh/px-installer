@@ -90,6 +90,8 @@ spec:
               "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
               "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
               "{{if .Token}}-t {{.Token}}{{end}}",
+              "{{if .SecretType}}-secret_type {{.SecretType}}{{end}}",
+              "{{if .ClusterSecretKey}}-cluster_secret_key {{.ClusterSecretKey}}{{end}}",
               "-x", "kubernetes"]
           {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
