@@ -18,7 +18,6 @@ import (
 
 const (
 	currentPxImage = "portworx/px-enterprise:1.2.10"
-	// TODO: Change to official image for PX-RunC (once released)
 	currentRunCImage = "portworx/oci-monitor:latest"
 )
 

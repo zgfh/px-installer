@@ -17,13 +17,14 @@ import (
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc4" // TODO: "portworx/px-base-enterprise-oci:latest"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc5" // TODO: "portworx/px-base-enterprise-oci:latest"
 	ociInstallerName   = "px-oci-installer"
 	mntFileName        = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
 	baseDir            = "/opt/pwx/oci"
 	baseServiceName    = "portworx"
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
+	pxConfigFile       = "/etc/pwx/config.json"
 )
 
 var (
@@ -217,6 +218,10 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.Info("Portworx service restart required due to configuration update.")
 		needsUpdate = true
 	}
+	if _, err := os.Stat(pxConfigFile); err != nil {
+		logrus.WithError(err).Debug("Error statting ", pxConfigFile)
+		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
+	}
 	return needsUpdate, nil
 }
 
@@ -280,13 +285,15 @@ func doInstall() {
 
 	if isRestartRequired {
 		logrus.Warn("Restarting portworx service")
+		logrus.Info("Reloading services")
+		err = runExternal("/bin/sh", "-c", "systemctl daemon-reload")
 		logrus.Info("Stopping Portworx service (if any)")
 		err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
 		logrus.WithError(err).Debugf("Stopping done")
 
-		logrus.Info("Starting Portworx service")
+		logrus.Info("Enabling and Starting Portworx service")
 		err = runExternal("/bin/sh", "-c",
-			`systemctl daemon-reload && systemctl enable portworx && systemctl start portworx`)
+			`systemctl enable portworx && systemctl start portworx`)
 		if err != nil {
 			logrus.WithError(err).Error("Could not start Portworx service")
 			os.Exit(-1)
@@ -341,6 +348,7 @@ func doUninstall() {
 
 // getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
 func getKubernetesRootDir() (string, error) {
+	logrus.Info("Locating kubelet's local state directory")
 	var out cachingOutput
 	args := strings.Fields(`/bin/ps --no-headers -o cmd -C kubelet`)
 	if err := runExternalWithOutput(&out, args[0], args[1:]...); err != nil {
