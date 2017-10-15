@@ -119,18 +119,20 @@ spec:
               mountPath: /var/run/docker.sock
             - name: kubelet
               mountPath: /var/lib/kubelet:shared
-            {{- if .IsRunC}}
-            - name: proc1nsmount
-              mountPath: /host_proc/1/ns
-            {{- else}}
             - name: libosd
               mountPath: /var/lib/osd:shared
-            - name: dev
-              mountPath: /dev
             - name: etcpwx
               mountPath: /etc/pwx/
+            {{- if .IsRunC}}
             - name: optpwx
-              mountPath: /export_bin:shared
+              mountPath: /opt/pwx/
+            - name: proc1nsmount
+              mountPath: /host_proc/1/ns/
+            {{- else}}
+            - name: dev
+              mountPath: /dev
+            - name: optpwx
+              mountPath: /export_bin
             - name: cores
               mountPath: /var/cores
             - name: src
@@ -149,20 +151,23 @@ spec:
         - name: kubelet
           hostPath:
             path: /var/lib/kubelet
-        {{- if .IsRunC}}
-        - name: proc1nsmount
-          hostPath:
-            path: /proc/1/ns
-        {{- else}}
         - name: libosd
           hostPath:
             path: /var/lib/osd
+        - name: etcpwx
+          hostPath:
+            path: /etc/pwx/
+        {{- if .IsRunC}}
+        - name: optpwx
+          hostPath:
+            path: /opt/pwx/
+        - name: proc1nsmount
+          hostPath:
+            path: /proc/1/ns/
+        {{- else}}
         - name: dev
           hostPath:
             path: /dev
-        - name: etcpwx
-          hostPath:
-            path: /etc/pwx
         - name: optpwx
           hostPath:
             path: /opt/pwx/bin
@@ -251,16 +256,18 @@ spec:
               mountPath: /var/lib/kubelet:shared
             - name: libosd
               mountPath: /var/lib/osd:shared
+            - name: etcpwx
+              mountPath: /etc/pwx/
             {{- if .IsRunC}}
+            - name: optpwx
+              mountPath: /opt/pwx/
             - name: proc1nsmount
-              mountPath: /host_proc/1/ns
+              mountPath: /host_proc/1/ns/
             {{- else}}
             - name: dev
               mountPath: /dev
-            - name: etcpwx
-              mountPath: /etc/pwx/
             - name: optpwx
-              mountPath: /export_bin:shared
+              mountPath: /export_bin
             - name: cores
               mountPath: /var/cores
             - name: src
@@ -282,17 +289,20 @@ spec:
         - name: libosd
           hostPath:
             path: /var/lib/osd
+        - name: etcpwx
+          hostPath:
+            path: /etc/pwx/
         {{- if .IsRunC}}
+        - name: optpwx
+          hostPath:
+            path: /opt/pwx/
         - name: proc1nsmount
           hostPath:
-            path: /proc/1/ns
+            path: /proc/1/ns/
         {{- else}}
         - name: dev
           hostPath:
             path: /dev
-        - name: etcpwx
-          hostPath:
-            path: /etc/pwx
         - name: optpwx
           hostPath:
             path: /opt/pwx/bin
