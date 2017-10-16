@@ -54,8 +54,17 @@ func (di *DockerInstaller) PullImage(name string) error {
 	return nil
 }
 
+// GetImageID inspects the image of a given name, and returns the image ID
+func (di *DockerInstaller) GetImageID(name string) (string, error) {
+	out, _, err := di.cli.ImageInspectWithRaw(di.ctx, name)
+	if err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
 // RunOnce will create container, run it, wait until it's finished, and finally remove it.
-func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string, logWriter io.Writer) error {
+func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string) error {
 	contConf := container.Config{
 		Image:        name,
 		Cmd:          args,
@@ -71,7 +80,8 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	}
 
 	hostConf := container.HostConfig{
-		Binds: binds,
+		Binds:      binds,
+		AutoRemove: false,
 	}
 
 	logrus.Infof("Removing old container %s (if any)", cntr)
@@ -116,10 +126,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	if err != nil {
 		retError = fmt.Errorf("Could not get logs for container %s [%s]: %s", resp.ID, name, err)
 	}
-	if logWriter == nil {
-		logWriter = os.Stderr
-	}
-	io.Copy(logWriter, out)
+	io.Copy(os.Stdout, out)
 
 	if retError == nil {
 		logrus.Infof("Removing container %s [%s]", resp.ID, name)
