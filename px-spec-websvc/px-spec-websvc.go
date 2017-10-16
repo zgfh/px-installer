@@ -57,18 +57,18 @@ func generate(templateFile string, p *Params) (string, error) {
 	}
 
 	// Fix drives entry
-	p.Drives = strings.Trim(p.Drives, " ")
 	if len(p.Drives) != 0 {
-		var drivesParam bytes.Buffer
+		var b bytes.Buffer
 		sep := ""
 		for _, dev := range strings.Split(p.Drives, ",") {
-			drivesParam.WriteString(sep)
-			drivesParam.WriteString(`"-s", "`)
-			drivesParam.WriteString(dev)
-			drivesParam.WriteByte('"')
+			dev = strings.Trim(dev, " ")
+			b.WriteString(sep)
+			b.WriteString(`"-s", "`)
+			b.WriteString(dev)
+			b.WriteByte('"')
 			sep = ", "
 		}
-		p.Drives = drivesParam.String()
+		p.Drives = b.String()
 	} else {
 		if len(p.Force) != 0 {
 			p.Drives = `"-A", "-f"`
@@ -79,11 +79,11 @@ func generate(templateFile string, p *Params) (string, error) {
 
 	// Pre-format Environment entry
 	if len(p.Env) != 0 {
-		p.Env = strings.Trim(p.Env, " ")
 		if len(p.Env) != 0 {
 			var b bytes.Buffer
 			b.WriteString("env:\n")
 			for _, e := range strings.Split(p.Env, ",") {
+				e = strings.Trim(e, " ")
 				entry := strings.SplitN(e, "=", 2)
 				if len(entry) == 2 {
 					b.WriteString(`            - name: "`)
