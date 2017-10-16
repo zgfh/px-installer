@@ -64,14 +64,29 @@
     td[colspan="2"] {
       background-color:#37464c;
     }
+
+    #hdr {
+      margin: 0;
+      padding: 5px;
+      text-align: center;
+    }
+    #hdr img {
+      float: left;
+      margin: 0 0 10px 10px;
+    }
   </style>
 </head>
 
 <body>
 
-  <img src="https://portworx.com/wp-content/themes/portworx/images/xportworx-logo.png.pagespeed.ic.0Z487a9F2s.png" width="200"
-    height="85">
+  <div id="hdr">
+  <img src="https://portworx.com/wp-content/themes/portworx/images/xportworx-logo.png.pagespeed.ic.0Z487a9F2s.png" width="200" height="85">
   <h1><a href="https://docs.portworx.com/scheduler/kubernetes/install.html#install">Portworx configuration form for Kubernetes</a></h1>
+  </div>
+
+  <br>
+  <div id="k"></div>
+  <p>
 
   <form id="px-form">
     <table BORDER="1">
@@ -201,8 +216,6 @@
     </table>
   </form>
 
-  <br>
-  <div id="k"></div>
 </body>
 
 <script LANGUAGE="JavaScript">
@@ -227,7 +240,7 @@
       }
     }
     s = document.URL + s
-    k.innerHTML = "kubectl apply -f '<a href=\"" + s + "\">" + s + "</a>'"
+    k.innerHTML = "&#x25BA;&nbsp; kubectl apply -f '<a href=\"" + s + "\">" + s + "</a>'"
   }
 
   proc(document.getElementById("px-form"));
