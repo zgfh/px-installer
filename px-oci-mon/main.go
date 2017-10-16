@@ -7,9 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
@@ -17,7 +15,7 @@ import (
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc5" // TODO: "portworx/px-base-enterprise-oci:latest"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc6" // TODO: "portworx/px-base-enterprise-oci:latest"
 	ociInstallerName   = "px-oci-installer"
 	mntFileName        = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
@@ -25,14 +23,15 @@ const (
 	baseServiceName    = "portworx"
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
 	pxConfigFile       = "/etc/pwx/config.json"
+	ociConfigFile      = "/opt/pwx/oci/config.json"
+	pxImageEnvLabel    = "PX_IMAGE"
+	pxImageIDLabel     = "PX_IMAGE_ID"
 )
 
 var (
-	// rsyncRegex extracts '# files transferred' from rsync's stat/stat2 report
-	rsyncRegex = regexp.MustCompilePOSIX(`Number of regular files transferred: ([0-9,]+)`)
 	// xtractKubeletRegex extracts /var/kubelet -override from running kubelet daemon
 	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
-	debugsOn = false
+	debugsOn           = false
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -98,23 +97,6 @@ func runExternal(name string, params ...string) error {
 
 // Output filters --
 
-type regexFilter struct {
-	re  *regexp.Regexp
-	val []byte
-	sync.Mutex
-}
-
-func (r *regexFilter) Write(b []byte) (int, error) {
-	if m := r.re.FindAllSubmatch(b, -1); len(m) > 0 && len(m[0]) > 1 {
-		ll := len(m[0][1])
-		r.Lock()
-		r.val = make([]byte, ll)
-		copy(r.val, m[0][1])
-		r.Unlock()
-	}
-	return os.Stderr.Write(b)
-}
-
 type cachingOutput struct {
 	bb bytes.Buffer
 }
@@ -131,54 +113,68 @@ func (c *cachingOutput) String() string {
 // -- Output Filters
 
 func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, error) {
-	logrus.Info("Downloading Portworx...")
+	logrus.Info("Downloading Portworx image...")
 
-	if err := di.PullImage(imageName); err != nil {
+	err := di.PullImage(imageName)
+	if err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
 			" - have you specified REGISTRY_USER/REGISTRY_PASS env. variables?")
 	}
 
-	// NOTE: This step is required, if px-runcds does not mount pwx-dirs
-	if err := runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
-		logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
-		err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
-		if err != nil {
-			return true, fmt.Errorf("Unable to create pwx directories: %s", err)
-		}
-	}
+	pxNeedsInstall := true
+	if pulledID, err := di.GetImageID(imageName); err == nil && len(pulledID) > 19 {
+		logrus.Info("Pulled PX image ID ", pulledID)
+		cfg.Env = append(cfg.Env, pxImageIDLabel+"="+pulledID)
 
-	reFilter := &regexFilter{re: rsyncRegex}
-	args := []string{"--upgrade-inplace", "--info=stats2"}
-	if debugsOn {
-		// do verbose rsync if debug is turned on
-		args = append(args, "-v")
-	}
-	err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
-		[]string{"/runc-entry-point.sh", "--debug"}, args, reFilter)
-	if err != nil {
-		logrus.WithError(err).Error("Could not install ", imageName)
-		usage("Could not install " + imageName +
-			" - please inspect docker's log, and contact Portworx support.")
-	}
-
-	numTransferredFiles := -1
-	if len(reFilter.val) > 0 {
-		// get rid of ,'s: 25,455 -> 25455
-		matched := strings.Replace(string(reFilter.val), ",", "", -1)
-		numTransferredFiles, err = strconv.Atoi(matched)
-		if err != nil {
-			logrus.Warn("Could not find number of transferred files")
-			numTransferredFiles = -1 // reset, just in case
+		// compare w/ installed image
+		installedID, err := utils.ExtractEnvFromOciConfig(ociConfigFile, pxImageIDLabel)
+		if err == nil && len(installedID) > 19 {
+			if pulledID == installedID {
+				logrus.Infof("Installed image ID %s same as pulled image ID %s",
+					installedID[7:19], pulledID[7:19])
+				pxNeedsInstall = false
+			} else {
+				logrus.Infof("Installed image ID %s _DIFFERENT_ than pulled image ID %s",
+					installedID[7:19], pulledID[7:19])
+			}
 		} else {
-			logrus.Infof("Number of transferred files: %d", numTransferredFiles)
+			logrus.WithError(err).Warnf("Could not retrieve installed OCI image ID")
+		}
+	} else {
+		logrus.WithError(err).Error("Could not retrieve PX image ID")
+	}
+
+	if pxNeedsInstall {
+		logrus.Info("Installing Portworx OCI bits...")
+
+		// NOTE: This step is required, if px-runcds does not mount pwx-dirs
+		if err := runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
+			logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
+			err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
+			if err != nil {
+				return true, fmt.Errorf("Unable to create pwx directories: %s", err)
+			}
+		}
+
+		args := []string{"--upgrade"}
+		if debugsOn {
+			// do verbose rsync if debug is turned on
+			args = append(args, "--debug")
+		}
+		err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
+			[]string{"/runc-entry-point.sh"}, args)
+		if err != nil {
+			logrus.WithError(err).Error("Could not install ", imageName)
+			usage("Could not install " + imageName +
+				" - please inspect docker's log, and contact Portworx support.")
 		}
 	}
 
-	logrus.Info("Installing Portworx...")
+	logrus.Info("Installing Portworx OCI service...")
 
 	// Compose startup-line for PX-RunC
-	args = make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
+	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
 	args = append(args, "/opt/pwx/bin/px-runc", "install")
 	args = append(args, cfg.Args[1:]...)
 
@@ -205,24 +201,18 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	}
 	installOutput := out.String()
 
-	// figure out if update required
-	needsUpdate := false
-	if numTransferredFiles > 3 {
-		logrus.Infof("Portworx service restart required as %d files updated.", numTransferredFiles)
-		needsUpdate = true
-	} else if numTransferredFiles < 0 {
-		logrus.Info("Portworx service restart required as unknown number of files updated.")
-		needsUpdate = true
-	}
+	// figure out if update required due to config change
+	pxNeedsRestart := false
 	if isRestartRequired(installOutput) {
 		logrus.Info("Portworx service restart required due to configuration update.")
-		needsUpdate = true
+		pxNeedsRestart = true
 	}
 	if _, err := os.Stat(pxConfigFile); err != nil {
 		logrus.WithError(err).Debug("Error statting ", pxConfigFile)
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
+		pxNeedsRestart = true
 	}
-	return needsUpdate, nil
+	return (pxNeedsRestart || pxNeedsInstall), nil
 }
 
 func validateMounts(mounts ...string) error {
@@ -244,7 +234,7 @@ func validateMounts(mounts ...string) error {
 }
 
 func doInstall() {
-	pxImage := os.Getenv("PX_IMAGE")
+	pxImage := os.Getenv(pxImageEnvLabel)
 	if pxImage == "" {
 		pxImage = ociInstallerImage
 	}
@@ -273,6 +263,9 @@ func doInstall() {
 		logrus.WithError(err).Error("Could not extract my container's configuration" +
 			" - are you running me inside Docker?")
 		os.Exit(-1)
+	}
+	if _, has := os.LookupEnv(pxImageEnvLabel); !has { // add PX_IMAGE env if missing
+		opts.Env = append(opts.Env, pxImageEnvLabel+"="+pxImage)
 	}
 
 	// TODO: Sanity checks for options

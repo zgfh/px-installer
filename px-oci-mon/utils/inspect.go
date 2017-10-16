@@ -2,11 +2,13 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/mount"
@@ -19,6 +21,35 @@ type SimpleContainerConfig struct {
 	Mounts []string
 	Env    []string
 	Labels map[string]string
+}
+
+type simpleOciProcess struct {
+	Args []string `json:"args"`
+	Env  []string `json:"env"`
+	Data json.RawMessage
+}
+type simpleOciConfig struct {
+	Process simpleOciProcess `json:"process"`
+	Data    json.RawMessage
+}
+
+func ExtractEnvFromOciConfig(fname, envVar string) (string, error) {
+	buf, err := ioutil.ReadFile(fname)
+	if err != nil {
+		return "", err
+	}
+	var c simpleOciConfig
+	if err = json.Unmarshal(buf, &c); err != nil {
+		return "", err
+	}
+	look4, found := envVar+"=", ""
+	offs := len(look4)
+	for _, e := range c.Process.Env {
+		if strings.HasPrefix(e, look4) {
+			found = e[offs:]
+		}
+	}
+	return found, nil
 }
 
 const cgroupFileName = "/proc/self/cgroup"
@@ -78,4 +109,3 @@ func formatMounts(mounts []types.MountPoint) []string {
 	}
 	return outList
 }
-
