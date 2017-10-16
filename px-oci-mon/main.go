@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strings"
 	"syscall"
@@ -17,15 +18,14 @@ import (
 const (
 	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc6" // TODO: "portworx/px-base-enterprise-oci:latest"
 	ociInstallerName   = "px-oci-installer"
-	mntFileName        = "/host_proc/1/ns/mnt"
+	hostProcMount      = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
 	baseDir            = "/opt/pwx/oci"
 	baseServiceName    = "portworx"
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
 	pxConfigFile       = "/etc/pwx/config.json"
-	ociConfigFile      = "/opt/pwx/oci/config.json"
-	pxImageEnvLabel    = "PX_IMAGE"
-	pxImageIDLabel     = "PX_IMAGE_ID"
+	pxImageKey         = "PX_IMAGE"
+	pxImageIDKey       = "PX_IMAGE_ID"
 )
 
 var (
@@ -76,7 +76,7 @@ examples:
 
 func runExternalWithOutput(out io.Writer, name string, params ...string) error {
 	args := make([]string, 0, 4+len(params))
-	args = append(args, "/usr/bin/nsenter", "--mount="+mntFileName, "--", name)
+	args = append(args, "/usr/bin/nsenter", "--mount="+hostProcMount, "--", name)
 	args = append(args, params...)
 
 	logrus.Info("> run: ", strings.Join(args[3:], " "))
@@ -125,10 +125,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	pxNeedsInstall := true
 	if pulledID, err := di.GetImageID(imageName); err == nil && len(pulledID) > 19 {
 		logrus.Info("Pulled PX image ID ", pulledID)
-		cfg.Env = append(cfg.Env, pxImageIDLabel+"="+pulledID)
+		cfg.Env = append(cfg.Env, pxImageIDKey+"="+pulledID)
 
 		// compare w/ installed image
-		installedID, err := utils.ExtractEnvFromOciConfig(ociConfigFile, pxImageIDLabel)
+		ociConfigFile := path.Join(baseDir, "config.json")
+		installedID, err := utils.ExtractEnvFromOciConfig(ociConfigFile, pxImageIDKey)
 		if err == nil && len(installedID) > 19 {
 			if pulledID == installedID {
 				logrus.Infof("Installed image ID %s same as pulled image ID %s",
@@ -181,7 +182,8 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	// Add Mounts
 	for _, vol := range cfg.Mounts {
 		// skip 2 internal mounts, pass the others
-		if strings.Contains(vol, ":/host_proc/1/ns") || strings.HasSuffix(vol, dockerFileSockName) {
+		procMountPrefix := ":" + path.Dir(hostProcMount)
+		if strings.Contains(vol, procMountPrefix) || strings.HasSuffix(vol, dockerFileSockName) {
 			continue
 		}
 		args = append(args, "-v", vol)
@@ -208,11 +210,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		pxNeedsRestart = true
 	}
 	if _, err := os.Stat(pxConfigFile); err != nil {
-		logrus.WithError(err).Debug("Error statting ", pxConfigFile)
+		logrus.WithError(err).Debug("Error stat ", pxConfigFile)
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
 		pxNeedsRestart = true
 	}
-	return (pxNeedsRestart || pxNeedsInstall), nil
+	return pxNeedsRestart || pxNeedsInstall, nil
 }
 
 func validateMounts(mounts ...string) error {
@@ -234,12 +236,12 @@ func validateMounts(mounts ...string) error {
 }
 
 func doInstall() {
-	pxImage := os.Getenv(pxImageEnvLabel)
+	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
 		pxImage = ociInstallerImage
 	}
 
-	err := validateMounts(mntFileName, dockerFileSockName)
+	err := validateMounts(hostProcMount, dockerFileSockName)
 	if err != nil {
 		usage(err)
 	}
@@ -264,8 +266,8 @@ func doInstall() {
 			" - are you running me inside Docker?")
 		os.Exit(-1)
 	}
-	if _, has := os.LookupEnv(pxImageEnvLabel); !has { // add PX_IMAGE env if missing
-		opts.Env = append(opts.Env, pxImageEnvLabel+"="+pxImage)
+	if _, has := os.LookupEnv(pxImageKey); !has { // add PX_IMAGE env if missing
+		opts.Env = append(opts.Env, pxImageKey+"="+pxImage)
 	}
 
 	// TODO: Sanity checks for options
