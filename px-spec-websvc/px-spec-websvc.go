@@ -17,35 +17,35 @@ import (
 )
 
 const (
-	currentPxImage = "portworx/px-enterprise:1.2.10"
+	currentPxImage   = "portworx/px-enterprise:1.2.11-rc6"
 	currentRunCImage = "portworx/oci-monitor:latest"
 )
 
 var emptyParams = Params{MasterLess: false, IsRunC: false}
 
 type Params struct {
-	Type        string `schema:"type" deprecated:"installType"`
-	Cluster     string `schema:"c"    deprecated:"cluster"`
-	Kvdb        string `schema:"k"    deprecated:"kvdb"`
-	Drives      string `schema:"s"    deprecated:"drives"`
-	DIface      string `schema:"d"    deprecated:"diface"`
-	MIface      string `schema:"m"    deprecated:"miface"`
-	KubeVer     string `schema:"kv"   deprecated:"k8sVersion"`
-	Coreos      string `schema:"cos"  deprecated:"coreos"`
-	Master      string `schema:"mas"  deprecated:"master"`
-	ZeroStorage string `schema:"z"    deprecated:"zeroStorage"`
-	Force       string `schema:"f"    deprecated:"force"`
-	EtcdPasswd  string `schema:"pwd"  deprecated:"etcdPasswd"`
-	EtcdCa      string `schema:"ca"   deprecated:"etcdCa"`
-	EtcdCert    string `schema:"cert" deprecated:"etcdCert"`
-	EtcdKey     string `schema:"key"  deprecated:"etcdKey"`
-	Acltoken    string `schema:"acl"  deprecated:"acltoken"`
-	Token       string `schema:"t"    deprecated:"token"`
-	Env         string `schema:"e"    deprecated:"env"`
-	Openshift   string `schema:"osft" deprecated:"openshift"`
-	PxImage     string `schema:"px"   deprecated:"pximage"`
-	MasterLess  bool   `schema:"-"    deprecated:"-"`
-	IsRunC      bool   `schema:"-"    deprecated:"-"`
+	Type        string `schema:"type"  deprecated:"installType"`
+	Cluster     string `schema:"c"     deprecated:"cluster"`
+	Kvdb        string `schema:"k"     deprecated:"kvdb"`
+	Drives      string `schema:"s"     deprecated:"drives"`
+	DIface      string `schema:"d"     deprecated:"diface"`
+	MIface      string `schema:"m"     deprecated:"miface"`
+	KubeVer     string `schema:"kbver" deprecated:"k8sVersion"`
+	Coreos      string `schema:"cos"   deprecated:"coreos"`
+	Master      string `schema:"mas"   deprecated:"master"`
+	ZeroStorage string `schema:"z"     deprecated:"zeroStorage"`
+	Force       string `schema:"f"     deprecated:"force"`
+	EtcdPasswd  string `schema:"pwd"   deprecated:"etcdPasswd"`
+	EtcdCa      string `schema:"ca"    deprecated:"etcdCa"`
+	EtcdCert    string `schema:"cert"  deprecated:"etcdCert"`
+	EtcdKey     string `schema:"key"   deprecated:"etcdKey"`
+	Acltoken    string `schema:"acl"   deprecated:"acltoken"`
+	Token       string `schema:"t"     deprecated:"token"`
+	Env         string `schema:"e"     deprecated:"env"`
+	Openshift   string `schema:"osft"  deprecated:"openshift"`
+	PxImage     string `schema:"px"    deprecated:"pximage"`
+	MasterLess  bool   `schema:"-"     deprecated:"-"`
+	IsRunC      bool   `schema:"-"     deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
