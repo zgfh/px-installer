@@ -33,6 +33,7 @@ type simpleOciConfig struct {
 	Data    json.RawMessage
 }
 
+// ExtractEnvFromOciConfig extracts a given env variable out of the OCI's config.json
 func ExtractEnvFromOciConfig(fname, envVar string) (string, error) {
 	buf, err := ioutil.ReadFile(fname)
 	if err != nil {

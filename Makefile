@@ -47,16 +47,16 @@ TARGETS += px-spec-websvc/px-spec-websvc px-oci-mon/px-oci-mon
 # BUILD RULES
 #
 
-.PHONY: all deploy rmi clean distclean vendor-pull px-container
+.PHONY: all deploy rmi clean distclean vendor-sync px-container
 
 all: $(TARGETS)
 
 
-px-oci-mon/px-oci-mon: px-oci-mon/main.go vendor/github.com/docker/docker/api
+px-oci-mon/px-oci-mon: px-oci-mon/main.go
 	@echo "Building $@ binary..."
 	@cd px-oci-mon && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
-px-spec-websvc/px-spec-websvc: px-spec-websvc/px-spec-websvc.go vendor/github.com/gorilla/schema
+px-spec-websvc/px-spec-websvc: px-spec-websvc/px-spec-websvc.go
 	@echo "Building $@ binary..."
 	@cd px-spec-websvc && env $(GOENV) $(GO) build $(BUILD_OPTIONS)
 
@@ -71,16 +71,8 @@ px-spec-websvc-container:
 
 px-container: px-oci-mon-container px-spec-websvc-container
 
-
-$(GOPATH)/bin/govendor:
-	$(GO) get -v github.com/kardianos/govendor
-
-vendor-pull: $(GOPATH)/bin/govendor
-	$(GOENV) $(GOPATH)/bin/govendor sync
-
-vendor/github.com/fsouza/go-dockerclient: vendor-pull
-vendor/github.com/docker/docker/api: vendor-pull
-vendor/github.com/gorilla/schema: vendor-pull
+vendor-sync:
+	govendor sync
 
 deploy:
 	@echo "Deploying all containers..."
@@ -113,4 +105,4 @@ clean:
 	rm -f $(TARGETS)
 
 distclean: rmi clean
-	@rm -fr vendor/github.com vendor/golang.org
+
