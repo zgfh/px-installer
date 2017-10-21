@@ -7,13 +7,10 @@ import (
 	"strings"
 
 	"github.com/Sirupsen/logrus"
-	"k8s.io/client-go/1.5/kubernetes"
-	"k8s.io/client-go/1.5/pkg/api"
-	k8s_types "k8s.io/client-go/1.5/pkg/api/v1"
-	"k8s.io/client-go/1.5/pkg/labels"
-	"k8s.io/client-go/1.5/pkg/selection"
-	"k8s.io/client-go/1.5/pkg/util/sets"
-	"k8s.io/client-go/1.5/rest"
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	k8s_types "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -113,7 +110,7 @@ func NewK8sClient() (*K8sClient, error) {
 // FindNode finds a Node from Kubernetes env, based on a given list of IPs (and Hostname).
 func (c *K8sClient) FindNode(ipList []string) (*K8sNode, error) {
 	// first we list the Nodes
-	nodes, err := c.Core().Nodes().List(api.ListOptions{})
+	nodes, err := c.Core().Nodes().List(meta_v1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -194,19 +191,8 @@ func (c *K8sClient) WatchNodeByHostname(
 ) error {
 	// Add a selector so that we only watch for updates
 	// on the provided node.
-	requirement, err := labels.NewRequirement(
-		hostnameKey,
-		selection.DoubleEquals,
-		sets.NewString(nodeHostname),
-	)
-	if err != nil {
-		return fmt.Errorf("Failed to create a requirement for watch "+
-			"with nodeID (%v): ", err)
-	}
-
-	selector := labels.NewSelector()
-	selector = selector.Add(*requirement)
-	listOptions := api.ListOptions{
+	selector := hostnameKey + "==" + nodeHostname
+	listOptions := meta_v1.ListOptions{
 		Watch:         true,
 		LabelSelector: selector,
 	}
