@@ -6,17 +6,21 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"syscall"
 
 	"github.com/Sirupsen/logrus"
 	"github.com/portworx/px-installer/px-oci-mon/utils"
+	"github.com/portworx/sched-ops/k8s"
+	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc6" // TODO: "portworx/px-base-enterprise-oci:latest"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc9" // TODO: "portworx/px-enterprise:latest"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
@@ -32,6 +36,7 @@ var (
 	// xtractKubeletRegex extracts /var/kubelet -override from running kubelet daemon
 	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
 	debugsOn           = false
+	lastPxEnabled      = true
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -177,7 +182,12 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	// Compose startup-line for PX-RunC
 	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
 	args = append(args, "/opt/pwx/bin/px-runc", "install")
-	args = append(args, cfg.Args[1:]...)
+	if strings.HasSuffix(strings.ToLower(cfg.Args[0]), "install") {
+		// skip INSTALL/UNINSTALL arg...
+		args = append(args, cfg.Args[1:]...)
+	} else {
+		args = append(args, cfg.Args...)
+	}
 
 	// Add Mounts
 	for _, vol := range cfg.Mounts {
@@ -235,6 +245,22 @@ func validateMounts(mounts ...string) error {
 	return nil
 }
 
+func doRestart() {
+	logrus.Info("Reloading services")
+	err := runExternal("/bin/sh", "-c", "systemctl daemon-reload")
+	logrus.Info("Stopping Portworx service (if any)")
+	err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
+	logrus.WithError(err).Debugf("Stopping done")
+
+	logrus.Info("Enabling and Starting Portworx service")
+	err = runExternal("/bin/sh", "-c",
+		`systemctl enable portworx && systemctl start portworx`)
+	if err != nil {
+		logrus.WithError(err).Error("Could not start Portworx service")
+		os.Exit(-1)
+	}
+}
+
 func doInstall() {
 	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
@@ -280,19 +306,7 @@ func doInstall() {
 
 	if isRestartRequired {
 		logrus.Warn("Restarting portworx service")
-		logrus.Info("Reloading services")
-		err = runExternal("/bin/sh", "-c", "systemctl daemon-reload")
-		logrus.Info("Stopping Portworx service (if any)")
-		err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
-		logrus.WithError(err).Debugf("Stopping done")
-
-		logrus.Info("Enabling and Starting Portworx service")
-		err = runExternal("/bin/sh", "-c",
-			`systemctl enable portworx && systemctl start portworx`)
-		if err != nil {
-			logrus.WithError(err).Error("Could not start Portworx service")
-			os.Exit(-1)
-		}
+		doRestart()
 	} else {
 		logrus.Info("Portworx service restart not required.")
 	}
@@ -418,13 +432,27 @@ func isRestartRequired(in string) bool {
 	return false
 }
 
-func main() {
-	if len(os.Args) < 2 || (os.Args[1] != "install" && os.Args[1] != "uninstall") {
-		usage("First argument must be <install|uninstall>")
+func unblockAndReplaySignals(sigs chan os.Signal) {
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
+	if len(sigs) > 0 {
+		s := <-sigs
+		switch s {
+		case syscall.SIGINT:
+			logrus.Warnf("Replaying interrupt")
+			syscall.Kill(syscall.Getpid(), syscall.SIGINT)
+		case syscall.SIGTERM:
+			logrus.Warnf("Replaying terminated")
+			syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
+		}
+	} else {
+		logrus.Debug("No signals to replay")
 	}
+}
 
+func main() {
+	// Debugs on?
 	if debugsOn = os.Getenv("DEBUG") != ""; !debugsOn {
-		for _, v := range os.Args[1:] {
+		for _, v := range os.Args[1:] { // skim thorough the debug-opts
 			if v == "--debug" {
 				debugsOn = true
 				break
@@ -435,17 +463,44 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	switch os.Args[1] {
-	case "install":
-		doInstall()
-	case "uninstall":
-		doUninstall()
-	default:
-		usage("Command " + os.Args[1] + " not supported")
+	meNode, err := utils.FindMyNode()
+	if err != nil || meNode == nil {
+		logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
+		os.Exit(1)
 	}
 
+	lastOp := "Install"
+	if lastPxEnabled = utils.IsPxEnabled(meNode); lastPxEnabled {
+		doInstall()
+	} else {
+		doUninstall()
+		lastOp = "Uninstall"
+	}
+
+	// install node-watcher to control the install/uninstall
+	logrus.Info("Activating node-watcher")
+	k8s.Instance().WatchNode(meNode, func(node *v1.Node) error {
+		if utils.IsPxEnabled(node) && !lastPxEnabled {
+			logrus.Info("Requested PX-enablement via labels")
+			doInstall()
+			lastPxEnabled = true
+		} else if !utils.IsPxEnabled(node) && lastPxEnabled {
+			logrus.Info("Requested PX-disablement via labels")
+			// temporarily block signals, until we process the uninstall
+			// (required to survive `docker stop`)
+			sigs := make(chan os.Signal, 1)
+			defer unblockAndReplaySignals(sigs)
+			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+			doUninstall()
+			lastPxEnabled = false
+		}
+		return nil
+	})
+
 	// NOTE: we are DaemonSet entrypoint, so we should not exit
-	logrus.Infof("%s done - going to sleep", strings.Title(os.Args[1]))
-	err := syscall.Pause()
-	logrus.WithError(err).Error("Could not pause")
+	logrus.Info(lastOp, " done - MAIN exiting")
+	runtime.Goexit()
+	// normally unreachable
+	logrus.Error("Could not exit MAIN !!")
 }
