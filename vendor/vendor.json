@@ -403,10 +403,10 @@
 			"revisionTime": "2017-08-14T20:04:35Z"
 		},
 		{
-			"checksumSHA1": "jpdskIWxK8FlHfrTmkcPJp99YbM=",
+			"checksumSHA1": "lUUNXoNDEeuhc7N0hdZytFSUO1s=",
 			"path": "github.com/portworx/sched-ops/k8s",
-			"revision": "ff3b5d368b7bcb1829c0d8c153e1b5df81664925",
-			"revisionTime": "2017-10-21T01:39:46Z"
+			"revision": "4f39b44c15a91afadb4f82645d0125f776688d04",
+			"revisionTime": "2017-10-26T22:06:57Z"
 		},
 		{
 			"checksumSHA1": "5KvHyB1CImtwZT3fwNkNUlc8R0k=",
