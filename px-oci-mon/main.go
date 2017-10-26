@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path"
 	"regexp"
 	"runtime"
@@ -14,11 +15,12 @@ import (
 
 	"github.com/Sirupsen/logrus"
 	"github.com/portworx/px-installer/px-oci-mon/utils"
-	"os/signal"
+	"github.com/portworx/sched-ops/k8s"
+	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc8" // TODO: "portworx/px-enterprise:latest"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc9" // TODO: "portworx/px-enterprise:latest"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
@@ -461,20 +463,14 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
-	kb, err := utils.NewK8sClient()
-	if err != nil || kb == nil {
-		logrus.Errorf("Could not instantiate Kubernetes client: %s", err)
-		os.Exit(1)
-	}
-
-	meNode, err := kb.FindMyNode()
+	meNode, err := utils.FindMyNode()
 	if err != nil || meNode == nil {
 		logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
 		os.Exit(1)
 	}
 
 	lastOp := "Install"
-	if lastPxEnabled = meNode.IsPxEnabled(); lastPxEnabled {
+	if lastPxEnabled = utils.IsPxEnabled(meNode); lastPxEnabled {
 		doInstall()
 	} else {
 		doUninstall()
@@ -483,12 +479,12 @@ func main() {
 
 	// install node-watcher to control the install/uninstall
 	logrus.Info("Activating node-watcher")
-	kb.WatchNode(meNode, func(node *utils.K8sNode) error {
-		if node.IsPxEnabled() && !lastPxEnabled {
+	k8s.Instance().WatchNode(meNode, func(node *v1.Node) error {
+		if utils.IsPxEnabled(node) && !lastPxEnabled {
 			logrus.Info("Requested PX-enablement via labels")
 			doInstall()
 			lastPxEnabled = true
-		} else if !node.IsPxEnabled() && lastPxEnabled {
+		} else if !utils.IsPxEnabled(node) && lastPxEnabled {
 			logrus.Info("Requested PX-disablement via labels")
 			// temporarily block signals, until we process the uninstall
 			// (required to survive `docker stop`)
