@@ -86,8 +86,7 @@ spec:
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
-            [{{if .IsRunC}}"install", {{end}}
-             {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
+            [{{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
@@ -220,8 +219,7 @@ spec:
           terminationMessagePath: "/tmp/px-termination-log"
           imagePullPolicy: Always
           args:
-            [{{if .IsRunC}}"install", {{end}}
-             {{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
+            [{{- if .Kvdb}}"-k", "{{.Kvdb}}", {{end}}
              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
