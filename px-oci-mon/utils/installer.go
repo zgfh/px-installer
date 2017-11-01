@@ -7,10 +7,10 @@ import (
 	"io"
 	"os"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/client"
+	"github.com/sirupsen/logrus"
 )
 
 // DockerInstaller is a Docker client specialized for Container installation

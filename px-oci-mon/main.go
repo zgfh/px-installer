@@ -13,9 +13,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/portworx/px-installer/px-oci-mon/utils"
 	"github.com/portworx/sched-ops/k8s"
+	"github.com/sirupsen/logrus"
 	"k8s.io/client-go/pkg/api/v1"
 )
 

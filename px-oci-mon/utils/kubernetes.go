@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Sirupsen/logrus"
-	k8s_types "k8s.io/client-go/pkg/api/v1"
 	"github.com/portworx/sched-ops/k8s"
+	"github.com/sirupsen/logrus"
+	k8s_types "k8s.io/client-go/pkg/api/v1"
 )
 
 const (

@@ -12,8 +12,8 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/Sirupsen/logrus"
 	"github.com/gorilla/schema"
+	"github.com/sirupsen/logrus"
 )
 
 const (
