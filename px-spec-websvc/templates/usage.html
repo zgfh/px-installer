@@ -228,8 +228,8 @@
         s += sep + el.name + "="
         if (el.name == "e" || el.name == "env") {
           s += encodeURIComponent(el.value)
-        } else if (el.name == 's') {
-	  s += el.value.replace(/,/g, '%2C')
+        } else if (el.name == 's' || el.name == 'k') {
+          s += el.value.replace(/,/g, '%2C')
         } else {
           s += el.value
         }
