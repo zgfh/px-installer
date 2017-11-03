@@ -148,8 +148,8 @@
         <td><code>kbver:</code> Specify Kubernetes version (default is 1.7) (example: <var>1.8.0</var>)</td>
       </tr>
       <tr>
-        <td><input type="checkbox" NAME="cos" onClick="proc(this.form)"></td>
-        <td><code>cos:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
+        <td><input type="checkbox" NAME="coreos" onClick="proc(this.form)"></td>
+        <td><code>coreos:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
       </tr>
       <tr>
         <td><input type="checkbox" NAME="mas" onClick="proc(this.form)"></td>
@@ -228,8 +228,8 @@
         s += sep + el.name + "="
         if (el.name == "e" || el.name == "env") {
           s += encodeURIComponent(el.value)
-        } else if (el.name == 's') {
-	  s += el.value.replace(/,/g, '%2C')
+        } else if (el.name == 's' || el.name == 'k') {
+          s += el.value.replace(/,/g, '%2C')
         } else {
           s += el.value
         }

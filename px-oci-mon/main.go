@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11-rc9" // TODO: "portworx/px-enterprise:latest"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
 	dockerFileSockName = "/var/run/docker.sock"
