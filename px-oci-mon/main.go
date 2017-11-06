@@ -3,9 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"io"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path"
 	"regexp"
@@ -37,6 +35,8 @@ var (
 	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
 	debugsOn           = false
 	lastPxEnabled      = true
+	lastServiceCmd     = ""
+	ociService         *utils.OciServiceControl
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -46,7 +46,7 @@ func usage(args ...interface{}) {
 		fmt.Fprintln(os.Stderr)
 	}
 
-	fmt.Printf(`Usage: %[1]s <install|uninstall> [options]
+	fmt.Printf(`Usage: %[1]s [options]
 
 options:
    -oci <dir>                Specify OCI directory (dfl: %[2]s)
@@ -63,7 +63,7 @@ options:
    -a                        Instructs PX to use any available, unused and unmounted drives
    -A                        Instructs PX to use any available, unused and unmounted drives or partitions
    -x <swarm|kubernetes>     Specify scheduler being used in the environment
-   -token <token>            Portworx lighthouse token for cluster
+   -t <token>                Portworx lighthouse token for cluster
 
 kvdb-options:
    -userpwd <user:passwd>    Username and password for ETCD authentication
@@ -73,31 +73,10 @@ kvdb-options:
    -acltoken <token>         ACL token value used for Consul authentication
 
 examples:
-   %[1]s install -k etcd://70.0.1.65:2379 -c MY_CLUSTER_ID -s /dev/sdc -d enp0s8 -m enp0s8
+   %[1]s -k etcd://70.0.1.65:2379 -c MY_CLUSTER_ID -s /dev/sdc -d enp0s8 -m enp0s8
 
 `, os.Args[0], baseDir, baseServiceName, fmt.Sprintf(baseServiceFileFmt, baseServiceName))
 	os.Exit(1)
-}
-
-func runExternalWithOutput(out io.Writer, name string, params ...string) error {
-	args := make([]string, 0, 4+len(params))
-	args = append(args, "/usr/bin/nsenter", "--mount="+hostProcMount, "--", name)
-	args = append(args, params...)
-
-	logrus.Info("> run: ", strings.Join(args[3:], " "))
-	logrus.Debugf(">>> %+v", args)
-	cmd := exec.Command(args[0], args[1:]...)
-	if out == nil {
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	} else {
-		// note: exec.CombinedOutput() assigns to bytes.buffer, like we do
-		cmd.Stdout, cmd.Stderr = out, out
-	}
-	return cmd.Run()
-}
-
-func runExternal(name string, params ...string) error {
-	return runExternalWithOutput(nil, name, params...)
 }
 
 // Output filters --
@@ -155,9 +134,9 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.Info("Installing Portworx OCI bits...")
 
 		// NOTE: This step is required, if px-runcds does not mount pwx-dirs
-		if err := runExternal("/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
+		if err := ociService.RunExternal(nil, "/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
 			logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
-			err = runExternal("/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
+			err = ociService.RunExternal(nil, "/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
 			if err != nil {
 				return true, fmt.Errorf("Unable to create pwx directories: %s", err)
 			}
@@ -207,7 +186,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	// TODO: Add Labels?
 
 	var out cachingOutput
-	if err = runExternalWithOutput(&out, args[0], args[1:]...); err != nil {
+	if err = ociService.RunExternal(&out, args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
 		return true, err
 	}
@@ -245,23 +224,7 @@ func validateMounts(mounts ...string) error {
 	return nil
 }
 
-func doRestart() {
-	logrus.Info("Reloading services")
-	err := runExternal("/bin/sh", "-c", "systemctl daemon-reload")
-	logrus.Info("Stopping Portworx service (if any)")
-	err = runExternal("/bin/sh", "-c", "systemctl stop portworx")
-	logrus.WithError(err).Debugf("Stopping done")
-
-	logrus.Info("Enabling and Starting Portworx service")
-	err = runExternal("/bin/sh", "-c",
-		`systemctl enable portworx && systemctl start portworx`)
-	if err != nil {
-		logrus.WithError(err).Error("Could not start Portworx service")
-		os.Exit(-1)
-	}
-}
-
-func doInstall() {
+func doInstall() error {
 	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
 		pxImage = ociInstallerImage
@@ -274,9 +237,7 @@ func doInstall() {
 
 	id, err := utils.GetMyContainerID()
 	if err != nil {
-		logrus.WithError(err).Error("Could not determine my container ID" +
-			" - are you running me inside Docker?")
-		os.Exit(-1)
+		return fmt.Errorf("Could not determine my container ID: %s", err)
 	}
 
 	di, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
@@ -288,9 +249,7 @@ func doInstall() {
 
 	opts, err := di.ExtractConfig(id)
 	if err != nil {
-		logrus.WithError(err).Error("Could not extract my container's configuration" +
-			" - are you running me inside Docker?")
-		os.Exit(-1)
+		return fmt.Errorf("Could not extract my container's configuration: %s", err)
 	}
 	if _, has := os.LookupEnv(pxImageKey); !has { // add PX_IMAGE env if missing
 		opts.Env = append(opts.Env, pxImageKey+"="+pxImage)
@@ -300,59 +259,41 @@ func doInstall() {
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
 	isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
-		logrus.WithError(err).Error("Could not install Portworx service")
-		os.Exit(-1)
+		return fmt.Errorf("Could not install Portworx service: %s", err)
 	}
 
 	if isRestartRequired {
-		logrus.Warn("Restarting portworx service")
-		doRestart()
+		logrus.Warn("Reloading + Restarting portworx service")
+		err = ociService.Reload()
+		if err != nil {
+			logrus.WithError(err).Warn("Error reloading service (cont)")
+		}
+		err = ociService.Restart()
+		if err != nil {
+			return err
+		}
 	} else {
 		logrus.Info("Portworx service restart not required.")
 	}
+	return nil
 }
 
-func doUninstall() {
+func doUninstall() error {
 	logrus.Info("Stopping Portworx service")
-	var b bytes.Buffer
-	err := runExternalWithOutput(&b, "/bin/sh", "-c",
-		`systemctl stop portworx`)
-	if err != nil {
-		strerr := b.String()
-		if strings.Contains(strerr, " not loaded") {
-			logrus.Info(strerr)
-		} else {
-			logrus.WithError(err).Error("Could not stop Portworx service")
-			os.Exit(-1) // NOTE: CRITICAL failure !!
-		}
+	if err := ociService.Stop(); err != nil {
+		return err
 	}
 
 	logrus.Info("Disabling Portworx service")
-	b.Reset()
-	err = runExternalWithOutput(&b, "/bin/sh", "-c",
-		`systemctl disable portworx`)
-	if err != nil {
-		strerr := b.String()
-		if strings.Contains(strerr, "No such file or directory") {
-			logrus.Info("Portworx service already disabled")
-		} else {
-			logrus.WithError(err).Error("Could not disable Portworx service")
-			os.Exit(-1) // NOTE: CRITICAL failure !!
-		}
+	if err := ociService.Disable(); err != nil {
+		return err
 	}
 
-	logrus.Info("Removing Portworx service bind-mount (if any)")
-	err = runExternal("/bin/sh", "-c",
-		fmt.Sprintf(`grep -q ' %[1]s %[1]s ' /proc/self/mountinfo && umount %[1]s`, "/opt/pwx/oci"))
-	if err != nil {
-		logrus.WithError(err).Warn("Could not bind-umount Portworx files (continuing)")
+	logrus.Info("Removing Portworx service bind-mount (if any) and uninstall")
+	if err := ociService.Remove(); err != nil {
+		return err
 	}
-
-	logrus.Info("Removing Portworx files")
-	err = runExternal("/bin/rm", "-fr", "/opt/pwx", "/etc/systemd/system/portworx.service")
-	if err != nil {
-		logrus.WithError(err).Warn("Could not remove all Portworx files")
-	}
+	return nil
 }
 
 // getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
@@ -360,7 +301,7 @@ func getKubernetesRootDir() (string, error) {
 	logrus.Info("Locating kubelet's local state directory")
 	var out cachingOutput
 	args := strings.Fields(`/bin/ps --no-headers -o cmd -C kubelet`)
-	if err := runExternalWithOutput(&out, args[0], args[1:]...); err != nil {
+	if err := ociService.RunExternal(&out, args[0], args[1:]...); err != nil {
 		err = fmt.Errorf("Could not find kubelet service: %s", err)
 		return "", err
 	}
@@ -449,6 +390,43 @@ func unblockAndReplaySignals(sigs chan os.Signal) {
 	}
 }
 
+func watchNodeLabels(node *v1.Node) error {
+	logrus.Debugf("WATCH labels: %+v", node.GetLabels())
+	isPxEnabled := utils.IsPxEnabled(node)
+	if isPxEnabled && !lastPxEnabled {
+		logrus.Info("Requested PX-enablement via labels")
+		doInstall()
+		lastPxEnabled = true
+	} else if !isPxEnabled && lastPxEnabled {
+		logrus.Info("Requested PX-disablement via labels")
+		// temporarily block signals, until we process the uninstall
+		// (required to survive `docker stop`)
+		sigs := make(chan os.Signal, 1)
+		defer unblockAndReplaySignals(sigs)
+		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+		doUninstall()
+		lastPxEnabled = false
+	}
+
+	if req := utils.GetServiceRequest(node); req != "" {
+		if req == lastServiceCmd {
+			logrus.Debug("Ignoring service-request for ", req)
+		} else {
+			if err := ociService.HandleRequest(req); err != nil {
+				logrus.Error(err)
+			} else if req == "restart" {
+				// we're removing "restart" label, and keeping the others
+				utils.RemoveServiceLabel(node)
+				lastServiceCmd = ""
+			} else {
+				lastServiceCmd = req
+			}
+		}
+	}
+	return nil
+}
+
 func main() {
 	// Debugs on?
 	if debugsOn = os.Getenv("DEBUG") != ""; !debugsOn {
@@ -463,6 +441,8 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	ociService = utils.NewOciServiceControl(hostProcMount, baseServiceName)
+
 	meNode, err := utils.FindMyNode()
 	if err != nil || meNode == nil {
 		logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
@@ -471,34 +451,20 @@ func main() {
 
 	lastOp := "Install"
 	if lastPxEnabled = utils.IsPxEnabled(meNode); lastPxEnabled {
-		doInstall()
+		err = doInstall()
 	} else {
-		doUninstall()
+		err = doUninstall()
 		lastOp = "Uninstall"
 	}
+	if err != nil { // install | uninstall failed?  CRITICAL FAILURE
+		logrus.Error(err)
+		os.Exit(-1)
+	}
 
-	// install node-watcher to control the install/uninstall
 	logrus.Info("Activating node-watcher")
-	k8s.Instance().WatchNode(meNode, func(node *v1.Node) error {
-		if utils.IsPxEnabled(node) && !lastPxEnabled {
-			logrus.Info("Requested PX-enablement via labels")
-			doInstall()
-			lastPxEnabled = true
-		} else if !utils.IsPxEnabled(node) && lastPxEnabled {
-			logrus.Info("Requested PX-disablement via labels")
-			// temporarily block signals, until we process the uninstall
-			// (required to survive `docker stop`)
-			sigs := make(chan os.Signal, 1)
-			defer unblockAndReplaySignals(sigs)
-			signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+	k8s.Instance().WatchNode(meNode, watchNodeLabels)
 
-			doUninstall()
-			lastPxEnabled = false
-		}
-		return nil
-	})
-
-	// NOTE: we are DaemonSet entrypoint, so we should not exit
+	// NOTE: exiting the main() goroutine, the daemonSet is still maintained "alive" via Watcher
 	logrus.Info(lastOp, " done - MAIN exiting")
 	runtime.Goexit()
 	// normally unreachable

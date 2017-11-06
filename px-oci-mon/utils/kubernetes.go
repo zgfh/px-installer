@@ -12,9 +12,8 @@ import (
 )
 
 const (
-	hostnameKey   = "kubernetes.io/hostname"
 	enablementKey = "px/enabled"
-	configKey     = "px/config"
+	serviceKey    = "px/service"
 )
 
 // GetLocalIPList returns the list of local IP addresses, and optionally includes local hostname.
@@ -62,6 +61,20 @@ func IsPxEnabled(n *k8s_types.Node) bool {
 	}
 	logrus.Debugf("No px-enabled label found on node %s - assuming 'enabled'", n.GetName())
 	return true
+}
+
+// GetServiceRequest returns the state of the "px/service" label
+func GetServiceRequest(n *k8s_types.Node) string {
+	if lb, has := n.GetLabels()[serviceKey]; has {
+		return strings.ToLower(lb)
+	}
+	logrus.Debugf("No operation requested on node %s", n.GetName())
+	return ""
+}
+
+// RemoveServiceLabel deletes the operations label off the node
+func RemoveServiceLabel(n *k8s_types.Node) error {
+	return k8s.Instance().RemoveLabelOnNode(n.GetName(), serviceKey)
 }
 
 // FindMyNode finds LOCAL Node from Kubernetes env.
