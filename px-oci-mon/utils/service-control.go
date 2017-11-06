@@ -12,11 +12,12 @@ import (
 )
 
 const (
-	opSTART   = "start"
-	opSTOP    = "stop"
-	opRESTART = "restart"
-	opENABLE  = "enable"
-	opDISABLE = "disable"
+	opStart   = "start"
+	opStop    = "stop"
+	opRestart = "restart"
+	opEnable  = "enable"
+	opDisable = "disable"
+	ociDir    = "/opt/pwx/oci"
 )
 
 // OciServiceControl provides "systemctl"-like controls over the external OCI service
@@ -62,27 +63,27 @@ func (o *OciServiceControl) do(op string) error {
 
 // Start the service
 func (o *OciServiceControl) Start() error {
-	return o.do(opSTART)
+	return o.do(opStart)
 }
 
 // Stop the service
 func (o *OciServiceControl) Stop() error {
-	return o.do(opSTOP)
+	return o.do(opStop)
 }
 
 // Restart the service
 func (o *OciServiceControl) Restart() error {
-	return o.do(opRESTART)
+	return o.do(opRestart)
 }
 
 // Enable the service
 func (o *OciServiceControl) Enable() error {
-	return o.do(opENABLE)
+	return o.do(opEnable)
 }
 
 // Disable the service
 func (o *OciServiceControl) Disable() error {
-	return o.do(opDISABLE)
+	return o.do(opDisable)
 }
 
 // Reload the service files
@@ -100,15 +101,15 @@ func (o *OciServiceControl) Reload() error {
 func (o *OciServiceControl) Remove() error {
 	logrus.Info("Removing service bind-mount (if any)")
 	err := o.RunExternal(nil, "/bin/sh", "-c",
-		fmt.Sprintf(`grep -q ' %[1]s %[1]s ' /proc/self/mountinfo && umount %[1]s`, "/opt/pwx/oci"))
+		fmt.Sprintf(`grep -q ' %[1]s %[1]s ' /proc/self/mountinfo && umount %[1]s`, ociDir))
 	if err != nil {
 		// log and attempt removal
 		logrus.WithError(err).Warn("Could not bind-umount Portworx files (continuing)")
 	}
 
 	logrus.Info("Removing Portworx files")
-	fname := fmt.Sprintf("/etc/systemd/system/%s.service", o.service)
-	err = o.RunExternal(nil, "/bin/rm", "-fr", "/opt/pwx", fname)
+	unitFile := fmt.Sprintf("/etc/systemd/system/%s.service", o.service)
+	err = o.RunExternal(nil, "/bin/rm", "-fr", ociDir, unitFile)
 	if err != nil {
 		err = fmt.Errorf("Could not remove all systemd files: %s", err)
 	}
@@ -116,13 +117,13 @@ func (o *OciServiceControl) Remove() error {
 }
 
 // HandleRequest will execute the systemctl -equivalent control command
-func (o *OciServiceControl) HandleRequest(op string) (err error) {
+func (o *OciServiceControl) HandleRequest(op string) (error) {
 	switch op {
-	case opSTART, opSTOP, opRESTART, opENABLE, opDISABLE:
+	case opStart, opStop, opRestart, opEnable, opDisable:
 		return o.do(op)
 	// NOTE: INSTALL and UNINSTALL (REMOVE) is being handling via main()
 	default:
 		return fmt.Errorf("Unsupported service request: %s", op)
 	}
-	return err
+	return nil
 }

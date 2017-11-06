@@ -224,7 +224,7 @@ func validateMounts(mounts ...string) error {
 	return nil
 }
 
-func doInstall() {
+func doInstall() error {
 	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
 		pxImage = ociInstallerImage
@@ -237,9 +237,7 @@ func doInstall() {
 
 	id, err := utils.GetMyContainerID()
 	if err != nil {
-		logrus.WithError(err).Error("Could not determine my container ID" +
-			" - are you running me inside Docker?")
-		os.Exit(-1)
+		return fmt.Errorf("Could not determine my container ID: %s", err)
 	}
 
 	di, err := utils.NewDockerInstaller(os.Getenv("REGISTRY_USER"), os.Getenv("REGISTRY_PASS"))
@@ -251,9 +249,7 @@ func doInstall() {
 
 	opts, err := di.ExtractConfig(id)
 	if err != nil {
-		logrus.WithError(err).Error("Could not extract my container's configuration" +
-			" - are you running me inside Docker?")
-		os.Exit(-1)
+		return fmt.Errorf("Could not extract my container's configuration: %s", err)
 	}
 	if _, has := os.LookupEnv(pxImageKey); !has { // add PX_IMAGE env if missing
 		opts.Env = append(opts.Env, pxImageKey+"="+pxImage)
@@ -263,41 +259,41 @@ func doInstall() {
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
 	isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
-		logrus.WithError(err).Error("Could not install Portworx service")
-		os.Exit(-1)
+		return fmt.Errorf("Could not install Portworx service: %s", err)
 	}
 
 	if isRestartRequired {
 		logrus.Warn("Reloading + Restarting portworx service")
 		err = ociService.Reload()
+		if err != nil {
+			logrus.WithError(err).Warn("Error reloading service (cont)")
+		}
 		err = ociService.Restart()
 		if err != nil {
-			logrus.Error(err)
-			os.Exit(-1)
+			return err
 		}
 	} else {
 		logrus.Info("Portworx service restart not required.")
 	}
+	return nil
 }
 
-func doUninstall() {
+func doUninstall() error {
 	logrus.Info("Stopping Portworx service")
 	if err := ociService.Stop(); err != nil {
-		logrus.Error(err)
-		os.Exit(-1) // NOTE: CRITICAL failure !!
+		return err
 	}
 
 	logrus.Info("Disabling Portworx service")
 	if err := ociService.Disable(); err != nil {
-		logrus.Error(err)
-		os.Exit(-1) // NOTE: CRITICAL failure !!
+		return err
 	}
 
 	logrus.Info("Removing Portworx service bind-mount (if any) and uninstall")
 	if err := ociService.Remove(); err != nil {
-		logrus.Error(err)
-		os.Exit(-1) // NOTE: CRITICAL failure !!
+		return err
 	}
+	return nil
 }
 
 // getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
@@ -455,10 +451,14 @@ func main() {
 
 	lastOp := "Install"
 	if lastPxEnabled = utils.IsPxEnabled(meNode); lastPxEnabled {
-		doInstall()
+		err = doInstall()
 	} else {
-		doUninstall()
+		err = doUninstall()
 		lastOp = "Uninstall"
+	}
+	if err != nil { // install | uninstall failed?  CRITICAL FAILURE
+		logrus.Error(err)
+		os.Exit(-1)
 	}
 
 	logrus.Info("Activating node-watcher")
