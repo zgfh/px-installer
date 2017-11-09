@@ -55,7 +55,13 @@ metadata:
 spec:
   minReadySeconds: 0
   updateStrategy:
-    type: {{if .IsRunC}}RollingUpdate{{else}}OnDelete{{end}}
+    {{- if .IsRunC}}
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+    {{- else}}
+    type: OnDelete
+    {{- end}}
   template:
     metadata:
       labels:
@@ -104,6 +110,7 @@ spec:
               port: 9001
           readinessProbe:
             periodSeconds: 10
+            initialDelaySeconds: 20
             httpGet:
               host: 127.0.0.1
               path: /status

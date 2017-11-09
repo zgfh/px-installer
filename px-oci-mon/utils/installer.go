@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"fmt"
@@ -50,8 +51,42 @@ func (di *DockerInstaller) PullImage(name string) error {
 	if err != nil {
 		return err
 	}
-	io.Copy(os.Stdout, out)
-	return nil
+	_, err = io.Copy(os.Stdout, out)
+	return err
+}
+
+// DownloadNotifyCbFunc is used in conjunction with PullImageCb, to provide callback when "image pull" is downloading
+// the content (as opposed to {"status":"Status: Image is up to date for portworx/px-base:338f20e"})
+type DownloadNotifyCbFunc func() error
+
+// PullImageCb pulls the image of a given name. The CallBack function is called if image does not exist, and is being downloaded.
+func (di *DockerInstaller) PullImageCb(name string, cb DownloadNotifyCbFunc) error {
+	opts := types.ImagePullOptions{RegistryAuth: di.auth}
+	out, err := di.cli.ImagePull(di.ctx, name, opts)
+	if err != nil {
+		return err
+	}
+
+	initBuf := make([]byte, 512)
+	if n, err := io.ReadFull(out, initBuf); err != nil {
+		if err == io.ErrUnexpectedEOF {
+			// this is an OK condition (incomplete read), copy the bytes we've got and exit
+			_, err = os.Stdout.Write(initBuf[0:n])
+			return err
+		}
+		return err
+	}
+	// based on initial read, let's determine if we started downloading layers
+	look4 := []byte(`"Pulling fs layer"`)
+	if bytes.Contains(initBuf, look4) && cb != nil {
+		if err := cb(); err != nil {
+			return err
+		}
+		// flush initial content, and continue...
+		os.Stdout.Write(initBuf)
+	}
+	_, err = io.Copy(os.Stdout, out)
+	return err
 }
 
 // GetImageID inspects the image of a given name, and returns the image ID
