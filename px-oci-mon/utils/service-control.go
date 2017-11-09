@@ -49,13 +49,24 @@ func (o *OciServiceControl) RunExternal(out io.Writer, name string, params ...st
 	return cmd.Run()
 }
 
-func (o *OciServiceControl) do(op string) error {
+func (o *OciServiceControl) do(op string, excludedErrorMsgs... string) error {
 	logrus.Infof("Doing %s service %s", o.service, op)
 	var b bytes.Buffer
 	cmd := fmt.Sprintf("systemctl %s %s", op, o.service)
 	err := o.RunExternal(&b, "/bin/sh", "-c", cmd)
 	logrus.WithError(err).WithField("out", b.String()).Debugf("SVC %sed", op)
 	if err != nil {
+		if len(excludedErrorMsgs) > 0 {
+			// Scan stderr output looking for provided segments that "clear" the error
+			// ie. " not loaded" to ignore error while stopping non-existing service
+			errOut := b.String()
+			for _, v := range excludedErrorMsgs {
+				if strings.Contains(errOut, v) {
+					logrus.Debugf("Error message `%s` cleared as OK", errOut)
+					return nil
+				}
+			}
+		}
 		err = fmt.Errorf("Could not %s service: %s", op, err)
 	}
 	return err
@@ -68,7 +79,7 @@ func (o *OciServiceControl) Start() error {
 
 // Stop the service
 func (o *OciServiceControl) Stop() error {
-	return o.do(opStop)
+	return o.do(opStop, " not loaded")
 }
 
 // Restart the service
@@ -117,7 +128,7 @@ func (o *OciServiceControl) Remove() error {
 }
 
 // HandleRequest will execute the systemctl -equivalent control command
-func (o *OciServiceControl) HandleRequest(op string) (error) {
+func (o *OciServiceControl) HandleRequest(op string) error {
 	switch op {
 	case opStart, opStop, opRestart, opEnable, opDisable:
 		return o.do(op)

@@ -99,7 +99,15 @@ func (c *cachingOutput) String() string {
 func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, error) {
 	logrus.Info("Downloading Portworx image...")
 
-	err := di.PullImage(imageName)
+	pxNeedsRestart := false
+
+	downloadCbFn := func() error {
+		logrus.Info("Docker image download detected - assuming upgrade and shutting down OCI (restart pending)")
+		pxNeedsRestart = true
+		return ociService.Stop()
+	}
+
+	err := di.PullImageCb(imageName, downloadCbFn)
 	if err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
@@ -131,7 +139,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	}
 
 	if pxNeedsInstall {
-		logrus.Info("Installing Portworx OCI bits...")
+		logrus.Info("Installing/Upgrading Portworx OCI files (restart pending)")
+		pxNeedsRestart = true
+		if err := ociService.Stop(); err != nil {
+			return true, err
+		}
 
 		// NOTE: This step is required, if px-runcds does not mount pwx-dirs
 		if err := ociService.RunExternal(nil, "/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
@@ -193,7 +205,6 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	installOutput := out.String()
 
 	// figure out if update required due to config change
-	pxNeedsRestart := false
 	if isRestartRequired(installOutput) {
 		logrus.Info("Portworx service restart required due to configuration update.")
 		pxNeedsRestart = true
@@ -203,7 +214,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
 		pxNeedsRestart = true
 	}
-	return pxNeedsRestart || pxNeedsInstall, nil
+	return pxNeedsRestart, nil
 }
 
 func validateMounts(mounts ...string) error {
