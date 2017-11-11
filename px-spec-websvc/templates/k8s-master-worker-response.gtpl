@@ -128,12 +128,14 @@ spec:
             - name: libosd
               mountPath: /var/lib/osd:shared
             - name: etcpwx
-              mountPath: /etc/pwx/
+              mountPath: /etc/pwx
             {{- if .IsRunC}}
             - name: optpwx
-              mountPath: /opt/pwx/
+              mountPath: /opt/pwx
             - name: proc1nsmount
-              mountPath: /host_proc/1/ns/
+              mountPath: /host_proc/1/ns
+            - name: sysdmount
+              mountPath: /etc/systemd/system
             {{- else}}
             - name: dev
               mountPath: /dev
@@ -162,14 +164,17 @@ spec:
             path: /var/lib/osd
         - name: etcpwx
           hostPath:
-            path: /etc/pwx/
+            path: /etc/pwx
         {{- if .IsRunC}}
         - name: optpwx
           hostPath:
-            path: /opt/pwx/
+            path: /opt/pwx
         - name: proc1nsmount
           hostPath:
-            path: /proc/1/ns/
+            path: /proc/1/ns
+        - name: sysdmount
+          hostPath:
+            path: /etc/systemd/system
         {{- else}}
         - name: dev
           hostPath:
@@ -269,12 +274,14 @@ spec:
             - name: libosd
               mountPath: /var/lib/osd:shared
             - name: etcpwx
-              mountPath: /etc/pwx/
+              mountPath: /etc/pwx
             {{- if .IsRunC}}
             - name: optpwx
-              mountPath: /opt/pwx/
+              mountPath: /opt/pwx
             - name: proc1nsmount
-              mountPath: /host_proc/1/ns/
+              mountPath: /host_proc/1/ns
+            - name: sysdmount
+              mountPath: /etc/systemd/system
             {{- else}}
             - name: dev
               mountPath: /dev
@@ -303,14 +310,17 @@ spec:
             path: /var/lib/osd
         - name: etcpwx
           hostPath:
-            path: /etc/pwx/
+            path: /etc/pwx
         {{- if .IsRunC}}
         - name: optpwx
           hostPath:
-            path: /opt/pwx/
+            path: /opt/pwx
         - name: proc1nsmount
           hostPath:
-            path: /proc/1/ns/
+            path: /proc/1/ns
+        - name: sysdmount
+          hostPath:
+            path: /etc/systemd/system
         {{- else}}
         - name: dev
           hostPath:

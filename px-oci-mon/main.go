@@ -21,7 +21,6 @@ const (
 	ociInstallerImage  = "portworx/px-enterprise:1.2.11"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
-	dockerFileSockName = "/var/run/docker.sock"
 	baseDir            = "/opt/pwx/oci"
 	baseServiceName    = "portworx"
 	baseServiceFileFmt = "/etc/systemd/system/%s.service"
@@ -37,6 +36,13 @@ var (
 	lastPxEnabled      = true
 	lastServiceCmd     = ""
 	ociService         *utils.OciServiceControl
+	ociPrivateMounts   = map[string]bool{
+		"/etc/pwx:/etc/pwx":                         true,
+		"/opt/pwx:/opt/pwx":                         true,
+		"/etc/systemd/system:/etc/systemd/system":   true,
+		"/proc/1/ns:/host_proc/1/ns":                true,
+		"/var/run/docker.sock:/var/run/docker.sock": true,
+	}
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -132,7 +138,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 					installedID[7:19], pulledID[7:19])
 			}
 		} else {
-			logrus.WithError(err).Warnf("Could not retrieve installed OCI image ID")
+			logrus.WithError(err).Warnf("Could not retrieve installed OCI image ID (is this initial install?)")
 		}
 	} else {
 		logrus.WithError(err).Error("Could not retrieve PX image ID")
@@ -143,15 +149,6 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		pxNeedsRestart = true
 		if err := ociService.Stop(); err != nil {
 			return true, err
-		}
-
-		// NOTE: This step is required, if px-runcds does not mount pwx-dirs
-		if err := ociService.RunExternal(nil, "/bin/mkdir", "-p", "/opt/pwx", "/etc/pwx"); err != nil {
-			logrus.WithError(err).Warn("Unable to create pwx directories directly -- retry via shell")
-			err = ociService.RunExternal(nil, "/bin/sh", "-c", "mkdir -p /opt/pwx /etc/pwx")
-			if err != nil {
-				return true, fmt.Errorf("Unable to create pwx directories: %s", err)
-			}
 		}
 
 		args := []string{"--upgrade"}
@@ -170,6 +167,12 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	logrus.Info("Installing Portworx OCI service...")
 
+	pxUnitFile := fmt.Sprintf(baseServiceFileFmt, baseServiceName)
+	oldUnitSt, err := os.Stat(pxUnitFile)
+	if err != nil {
+		logrus.WithError(err).Warn("Could not find service-file (is this initial install?)")
+	}
+
 	// Compose startup-line for PX-RunC
 	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
 	args = append(args, "/opt/pwx/bin/px-runc", "install")
@@ -182,9 +185,8 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	// Add Mounts
 	for _, vol := range cfg.Mounts {
-		// skip 2 internal mounts, pass the others
-		procMountPrefix := ":" + path.Dir(hostProcMount)
-		if strings.Contains(vol, procMountPrefix) || strings.HasSuffix(vol, dockerFileSockName) {
+		// skip local mounts, pass the others
+		if _, has := ociPrivateMounts[vol]; has {
 			continue
 		}
 		args = append(args, "-v", vol)
@@ -197,18 +199,37 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	// TODO: Add Labels?
 
-	var out cachingOutput
-	if err = ociService.RunExternal(&out, args[0], args[1:]...); err != nil {
+	var installOutput cachingOutput
+	if err = ociService.RunExternal(&installOutput, args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
 		return true, err
 	}
-	installOutput := out.String()
 
-	// figure out if update required due to config change
-	if isRestartRequired(installOutput) {
+	// figure out if update required due to config change or other reasons
+
+	// 1. check status of the unit-file
+	if oldUnitSt == nil {
+		logrus.Info("Portworx service restart required due to initial config.")
+		pxNeedsRestart = true
+		// let's also do reload + enable of the service
+		ociService.Reload()
+		if err = ociService.Enable(); err != nil {
+			logrus.WithError(err).Error("Could not enable service.")
+		}
+	} else if newUnitSt, err := os.Stat(pxUnitFile); err != nil {
+		return true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
+	} else if newUnitSt.ModTime().Sub(oldUnitSt.ModTime()) > 0 {
+		logrus.Info("Portworx service restart required due to updated ", pxUnitFile)
+		pxNeedsRestart = true
+	}
+
+	// 2. check output of "px-runc install"
+	if isRestartRequired(installOutput.String()) {
 		logrus.Info("Portworx service restart required due to configuration update.")
 		pxNeedsRestart = true
 	}
+
+	// 3. check for missing /etc/pwx/config.json
 	if _, err := os.Stat(pxConfigFile); err != nil {
 		logrus.WithError(err).Debug("Error stat ", pxConfigFile)
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
@@ -217,33 +238,39 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	return pxNeedsRestart, nil
 }
 
-func validateMounts(mounts ...string) error {
+func validateMounted(mounts ...string) error {
 	var st0, st1 syscall.Stat_t
 
-	if err := syscall.Lstat("/", &st0); err != nil {
+	err := syscall.Lstat("/", &st0)
+	if err != nil {
 		// improbable, but let's handle it
 		return fmt.Errorf("INTERNAL ERROR - could not stat '/': %s", err)
 	}
+
+	errMounts := make([]string, 0, 3)
 	for _, m := range mounts {
-		err := syscall.Lstat(m, &st1)
+		err = syscall.Lstat(m, &st1)
 		if err != nil {
-			return fmt.Errorf("File/Directory %s not found (%s) - please mount via 'run -v ...' option", m, err)
+			logrus.WithError(err).Errorf("File/Directory %s not found - please mount via 'run -v ...' option", m)
+			errMounts = append(errMounts, m)
 		} else if st0.Dev == st1.Dev {
-			return fmt.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m)
+			logrus.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m)
+			errMounts = append(errMounts, m)
 		}
 	}
-	return nil
+
+	if len(errMounts) > 0 {
+		err = fmt.Errorf("Following dirs/files must be mounted into this continer: %s",
+			strings.Join(errMounts, ", "))
+	}
+
+	return err
 }
 
 func doInstall() error {
 	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
 		pxImage = ociInstallerImage
-	}
-
-	err := validateMounts(hostProcMount, dockerFileSockName)
-	if err != nil {
-		usage(err)
 	}
 
 	id, err := utils.GetMyContainerID()
@@ -265,6 +292,16 @@ func doInstall() error {
 	if _, has := os.LookupEnv(pxImageKey); !has { // add PX_IMAGE env if missing
 		opts.Env = append(opts.Env, pxImageKey+"="+pxImage)
 	}
+	// Filter out undesired ENV entries
+	envListFilt := make([]string, 0, len(opts.Env))
+	for _, v := range opts.Env {
+		if strings.HasPrefix(v, "PATH=") {
+			logrus.Debugf("Removing %q entry from ENV", v)
+			continue
+		}
+		envListFilt = append(envListFilt, v)
+	}
+	opts.Env = envListFilt
 
 	// TODO: Sanity checks for options
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
@@ -452,6 +489,19 @@ func main() {
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
+	// Validate required OCI mounts are all valid and accounted for
+	if len(ociPrivateMounts) > 0 {
+		dirs, i := make([]string, len(ociPrivateMounts)), 0
+		for k := range ociPrivateMounts {
+			dirs[i] = strings.Split(k, ":")[1]
+			i++
+		}
+		if err := validateMounted(dirs...); err != nil {
+			logrus.Error(err)
+			os.Exit(-1)
+		}
+	}
+
 	ociService = utils.NewOciServiceControl(hostProcMount, baseServiceName)
 
 	meNode, err := utils.FindMyNode()
@@ -467,7 +517,8 @@ func main() {
 		err = doUninstall()
 		lastOp = "Uninstall"
 	}
-	if err != nil { // install | uninstall failed?  CRITICAL FAILURE
+	if err != nil {
+		// note: CRITICAL FAILURE if install | uninstall failed
 		logrus.Error(err)
 		os.Exit(-1)
 	}
