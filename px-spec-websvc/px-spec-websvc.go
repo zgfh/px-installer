@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	currentPxImage           = "portworx/px-enterprise:1.2.10"
+	currentPxImage           = "portworx/px-enterprise:1.2.11.2"
 	currentPxLighthouseImage = "portworx/px-lighthouse:1.1.9"
 )
 
