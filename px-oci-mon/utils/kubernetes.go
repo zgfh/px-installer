@@ -8,12 +8,21 @@ import (
 
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
-	k8s_types "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/client-go/pkg/api/v1"
 )
 
 const (
 	enablementKey = "px/enabled"
 	serviceKey    = "px/service"
+)
+
+var (
+	disabledLabels = []string{
+		"false", // please keep first, keyword used w/ k8s uninstall
+		"uninstall",
+		"remove",
+		"disable",
+	}
 )
 
 // GetLocalIPList returns the list of local IP addresses, and optionally includes local hostname.
@@ -53,32 +62,60 @@ func GetLocalIPList(includeHostname bool) ([]string, error) {
 	return ipList, nil
 }
 
-// IsPxEnabled reports if PX is enabled on this node.
-func IsPxEnabled(n *k8s_types.Node) bool {
+func in_array(needle string, stack ...string) (has bool) {
+	for i := range stack {
+		if has = needle == stack[i]; has {
+			break
+		}
+	}
+	return
+}
+
+// IsPxDisabled reports if PX is disabled on this node.
+func IsPxDisabled(n *v1.Node) bool {
 	if lb, has := n.GetLabels()[enablementKey]; has {
 		lb = strings.ToLower(lb)
-		return lb == "true" || lb == "yes" || lb == "1" || lb == "enabled"
+		return in_array(lb, disabledLabels...)
 	}
 	logrus.Debugf("No px-enabled label found on node %s - assuming 'enabled'", n.GetName())
-	return true
+	return false
+}
+
+// IsUninstallRequested reports if PX should uninstall on this node.
+func IsUninstallRequested(n *v1.Node) bool {
+	if lb, has := n.GetLabels()[enablementKey]; has {
+		lb = strings.ToLower(lb)
+		return in_array(lb, disabledLabels[1:]...)
+	}
+	return false
+}
+
+// DisablePx will replace force-set label to "false", thus triggering the K8s uninstall
+func DisablePx(n *v1.Node) error {
+	lb, _ := n.GetLabels()[enablementKey]
+	lb = strings.ToLower(lb)
+	logrus.Warnf("Resetting k8s label '%s=%s' to '%s' -- expect cleanup by k8s",
+		enablementKey, lb, disabledLabels[0])
+	return k8s.Instance().AddLabelOnNode(n.GetName(), enablementKey, disabledLabels[0])
 }
 
 // GetServiceRequest returns the state of the "px/service" label
-func GetServiceRequest(n *k8s_types.Node) string {
+func GetServiceRequest(n *v1.Node) string {
 	if lb, has := n.GetLabels()[serviceKey]; has {
 		return strings.ToLower(lb)
 	}
-	logrus.Debugf("No operation requested on node %s", n.GetName())
+	logrus.Debugf("No service request on node %s", n.GetName())
 	return ""
 }
 
 // RemoveServiceLabel deletes the operations label off the node
-func RemoveServiceLabel(n *k8s_types.Node) error {
+func RemoveServiceLabel(n *v1.Node) error {
+	logrus.Infof("Removing k8s label %s=%s", serviceKey, GetServiceRequest(n))
 	return k8s.Instance().RemoveLabelOnNode(n.GetName(), serviceKey)
 }
 
 // FindMyNode finds LOCAL Node from Kubernetes env.
-func FindMyNode() (*k8s_types.Node, error) {
+func FindMyNode() (*v1.Node, error) {
 	ipList, err := GetLocalIPList(true)
 	if err != nil {
 		return nil, fmt.Errorf("Could not find my IPs/Hostname: %s", err)
