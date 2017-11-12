@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"os"
-	"os/signal"
 	"path"
 	"regexp"
 	"runtime"
@@ -33,7 +32,7 @@ var (
 	// xtractKubeletRegex extracts /var/kubelet -override from running kubelet daemon
 	xtractKubeletRegex = regexp.MustCompile(`\s+--root-dir=(\S+)`)
 	debugsOn           = false
-	lastPxEnabled      = true
+	lastPxDisabled     = false
 	lastServiceCmd     = ""
 	ociService         *utils.OciServiceControl
 	ociPrivateMounts   = map[string]bool{
@@ -421,55 +420,42 @@ func isRestartRequired(in string) bool {
 	return false
 }
 
-func unblockAndReplaySignals(sigs chan os.Signal) {
-	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
-	if len(sigs) > 0 {
-		s := <-sigs
-		switch s {
-		case syscall.SIGINT:
-			logrus.Warnf("Replaying interrupt")
-			syscall.Kill(syscall.Getpid(), syscall.SIGINT)
-		case syscall.SIGTERM:
-			logrus.Warnf("Replaying terminated")
-			syscall.Kill(syscall.Getpid(), syscall.SIGTERM)
-		}
-	} else {
-		logrus.Debug("No signals to replay")
-	}
-}
-
+// watchNodeLabels monitors the label changes on the Node
+// NOTE: see https://kubernetes.io/docs/concepts/workloads/pods/pod/#termination-of-pods
 func watchNodeLabels(node *v1.Node) error {
 	logrus.Debugf("WATCH labels: %+v", node.GetLabels())
-	isPxEnabled := utils.IsPxEnabled(node)
-	if isPxEnabled && !lastPxEnabled {
+
+	isPxDisabled := utils.IsPxDisabled(node)
+	defer func() { lastPxDisabled = isPxDisabled }()
+	if !isPxDisabled && lastPxDisabled {
 		logrus.Info("Requested PX-enablement via labels")
 		doInstall()
-		lastPxEnabled = true
-	} else if !isPxEnabled && lastPxEnabled {
+	} else if isPxDisabled && !lastPxDisabled {
 		logrus.Info("Requested PX-disablement via labels")
-		// temporarily block signals, until we process the uninstall
-		// (required to survive `docker stop`)
-		sigs := make(chan os.Signal, 1)
-		defer unblockAndReplaySignals(sigs)
-		signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-
-		doUninstall()
-		lastPxEnabled = false
-	}
-
-	if req := utils.GetServiceRequest(node); req != "" {
+		if utils.IsUninstallRequested(node) {
+			doUninstall()
+			utils.DisablePx(node)
+		} else {
+			logrus.Warn("Label 'px/enable=false' set directly, not removing the OCI install" +
+					" (use px/enable=remove to uninstall)")
+		}
+	} else if req := utils.GetServiceRequest(node); req != "" {
 		if req == lastServiceCmd {
 			logrus.Debug("Ignoring service-request for ", req)
+			return nil
+		}
+
+		if err := ociService.HandleRequest(req); err != nil {
+			logrus.Error(err)
+			// note: in case of errors, we will _not_ reset the `lastServiceCmd`, so this request will be repeated
+			// on the next watch (note that watch() triggers every few seconds, on every Node{}-update ).
+		} else if req == "restart" {
+			// successful restart - remove "restart" label (will keep others)
+			utils.RemoveServiceLabel(node)
+			lastServiceCmd = ""
 		} else {
-			if err := ociService.HandleRequest(req); err != nil {
-				logrus.Error(err)
-			} else if req == "restart" {
-				// we're removing "restart" label, and keeping the others
-				utils.RemoveServiceLabel(node)
-				lastServiceCmd = ""
-			} else {
-				lastServiceCmd = req
-			}
+			// command was successful, persist it
+			lastServiceCmd = req
 		}
 	}
 	return nil
@@ -511,11 +497,11 @@ func main() {
 	}
 
 	lastOp := "Install"
-	if lastPxEnabled = utils.IsPxEnabled(meNode); lastPxEnabled {
-		err = doInstall()
-	} else {
+	if lastPxDisabled = utils.IsPxDisabled(meNode); lastPxDisabled {
 		err = doUninstall()
 		lastOp = "Uninstall"
+	} else {
+		err = doInstall()
 	}
 	if err != nil {
 		// note: CRITICAL FAILURE if install | uninstall failed

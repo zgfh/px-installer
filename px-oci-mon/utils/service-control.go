@@ -120,7 +120,7 @@ func (o *OciServiceControl) Remove() error {
 
 	logrus.Info("Removing Portworx files")
 	unitFile := fmt.Sprintf("/etc/systemd/system/%s.service", o.service)
-	err = o.RunExternal(nil, "/bin/rm", "-fr", ociDir, unitFile)
+	err = o.RunExternal(nil, "/bin/rm", "-fr", unitFile, ociDir )
 	if err != nil {
 		err = fmt.Errorf("Could not remove all systemd files: %s", err)
 	}
