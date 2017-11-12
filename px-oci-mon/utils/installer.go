@@ -163,17 +163,9 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	}
 	io.Copy(os.Stdout, out)
 
-	//if retError == nil {
-	//	logrus.Infof("Removing container %s [%s]", resp.ID, name)
-	//	err = di.cli.ContainerRemove(di.ctx, resp.ID, types.ContainerRemoveOptions{
-	//		RemoveVolumes: true,
-	//		Force:         true,
-	//	})
-	//	if err != nil {
-	//		retError = fmt.Errorf("Could not remove container %s [%s]: %s", resp.ID, name, err)
-	//	}
-	//}
-	// CHECKME: Not removing the container, not to provike the fsync, also to keep the PX-image
+	// CHECKME: Not removing the container, not to provoke the fsync, also to keep the PX-image
+	// > di.cli.ContainerRemove(di.ctx, resp.ID, types.ContainerRemoveOptions{RemoveVolumes: true, Force: true })
+
 	logrus.Warnf("NOTE: Not removing the %s container [%s]", resp.ID, name)
 
 	return retError

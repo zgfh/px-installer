@@ -444,13 +444,18 @@ func watchNodeLabels(node *v1.Node) error {
 			logrus.Debug("Ignoring service-request for ", req)
 			return nil
 		}
-		lastServiceCmd = req
+
 		if err := ociService.HandleRequest(req); err != nil {
 			logrus.Error(err)
+			// note: in case of errors, we will _not_ reset the `lastServiceCmd`, so this request will be repeated
+			// on the next watch (note that watch() triggers every few seconds, on every Node{}-update ).
 		} else if req == "restart" {
-			// we're removing "restart" label, and but keeping the others
+			// successful restart - remove "restart" label (will keep others)
 			utils.RemoveServiceLabel(node)
 			lastServiceCmd = ""
+		} else {
+			// command was successful, persist it
+			lastServiceCmd = req
 		}
 	}
 	return nil
