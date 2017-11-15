@@ -18,6 +18,7 @@ import (
 const (
 	currentPxImage   = "portworx/px-enterprise:1.2.11"
 	currentRunCImage = "portworx/oci-monitor:latest"
+	templateVersion  = "v2"
 )
 
 type Params struct {
@@ -43,6 +44,7 @@ type Params struct {
 	PxImage     string `schema:"px"     deprecated:"pximage"`
 	MasterLess  bool   `schema:"-"      deprecated:"-"`
 	IsRunC      bool   `schema:"-"      deprecated:"-"`
+	TmplVer     string `schema:"-"      deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
@@ -78,12 +80,14 @@ func generate(templateFile string, p *Params) (string, error) {
 	if len(p.Env) != 0 {
 		if len(p.Env) != 0 {
 			var b bytes.Buffer
-			b.WriteString("env:\n")
+			prefix := ""
 			for _, e := range strings.Split(p.Env, ",") {
 				e = strings.Trim(e, " ")
 				entry := strings.SplitN(e, "=", 2)
 				if len(entry) == 2 {
-					b.WriteString(`            - name: "`)
+					b.WriteString(prefix)
+					prefix = "            "
+					b.WriteString(`- name: "`)
 					b.WriteString(entry[0])
 					b.WriteString("\"\n")
 					b.WriteString(`              value: "`)
@@ -97,6 +101,7 @@ func generate(templateFile string, p *Params) (string, error) {
 
 	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
 	p.MasterLess = (p.Master != "true")
+	p.TmplVer = templateVersion
 
 	// select PX-Image
 	if p.PxImage == "" {

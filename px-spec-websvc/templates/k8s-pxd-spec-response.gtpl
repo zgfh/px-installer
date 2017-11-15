@@ -100,7 +100,10 @@ spec:
              {{- if .Acltoken}}"-acltoken", "{{.Acltoken}}", {{end}}
              {{- if .Token}}"-t", "{{.Token}}",{{end}}
              "-x", "kubernetes"]
-          {{if .Env}}{{.Env}}{{end}}
+          env:
+            - name: "PX_TEMPLATE_VERSION"
+              value: "{{.TmplVer}}"
+            {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             periodSeconds: 30
             initialDelaySeconds: 840 # allow image pull in slow networks
@@ -113,7 +116,7 @@ spec:
             initialDelaySeconds: 20
             httpGet:
               host: 127.0.0.1
-              path: /status
+              path: /v1/cluster/nodehealth
               port: 9001
           securityContext:
             privileged: true
