@@ -16,8 +16,8 @@ import (
 )
 
 const (
-	currentPxImage   = "portworx/px-enterprise:1.2.11"
-	currentRunCImage = "portworx/oci-monitor:latest"
+	currentPxImage   = "portworx/px-enterprise:1.2.11.3"
+	currentRunCImage = "portworx/oci-monitor:1.2.11.3"
 	templateVersion  = "v2"
 )
 
