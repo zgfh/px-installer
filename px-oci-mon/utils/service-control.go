@@ -50,11 +50,11 @@ func (o *OciServiceControl) RunExternal(out io.Writer, name string, params ...st
 }
 
 func (o *OciServiceControl) do(op string, excludedErrorMsgs... string) error {
-	logrus.Infof("Doing %s service %s", o.service, op)
+	logrus.Infof("Doing systemctl %s %s", o.service, strings.ToUpper(op))
 	var b bytes.Buffer
 	cmd := fmt.Sprintf("systemctl %s %s", op, o.service)
 	err := o.RunExternal(&b, "/bin/sh", "-c", cmd)
-	logrus.WithError(err).WithField("out", b.String()).Debugf("SVC %sed", op)
+	logrus.WithError(err).WithField("out", b.String()).Debugf("SVC %sd", op)
 	if err != nil {
 		if len(excludedErrorMsgs) > 0 {
 			// Scan stderr output looking for provided segments that "clear" the error
@@ -67,7 +67,7 @@ func (o *OciServiceControl) do(op string, excludedErrorMsgs... string) error {
 				}
 			}
 		}
-		err = fmt.Errorf("Could not %s service: %s", op, err)
+		err = fmt.Errorf("Could not %s '%s' service: %s", op, o.service, err)
 	}
 	return err
 }
@@ -120,6 +120,7 @@ func (o *OciServiceControl) Remove() error {
 
 	logrus.Info("Removing Portworx files")
 	unitFile := fmt.Sprintf("/etc/systemd/system/%s.service", o.service)
+	// CHECKME: NOTE that this command can run locally (should we?)
 	err = o.RunExternal(nil, "/bin/rm", "-fr", unitFile, ociDir )
 	if err != nil {
 		err = fmt.Errorf("Could not remove all systemd files: %s", err)

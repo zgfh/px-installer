@@ -26,6 +26,8 @@ const (
 	pxConfigFile       = "/etc/pwx/config.json"
 	pxImageKey         = "PX_IMAGE"
 	pxImageIDKey       = "PX_IMAGE_ID"
+	instK8sDir         = "/opt/pwx/oci/inst-k8s"
+	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
 )
 
 var (
@@ -101,18 +103,12 @@ func (c *cachingOutput) String() string {
 
 // -- Output Filters
 
-func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, error) {
+func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, bool, error) {
 	logrus.Info("Downloading Portworx image...")
 
 	pxNeedsRestart := false
 
-	downloadCbFn := func() error {
-		logrus.Info("Docker image download detected - assuming upgrade and shutting down OCI (restart pending)")
-		pxNeedsRestart = true
-		return ociService.Stop()
-	}
-
-	err := di.PullImageCb(imageName, downloadCbFn)
+	err := di.PullImage(imageName)
 	if err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
@@ -145,9 +141,8 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	if pxNeedsInstall {
 		logrus.Info("Installing/Upgrading Portworx OCI files (restart pending)")
-		pxNeedsRestart = true
 		if err := ociService.Stop(); err != nil {
-			return true, err
+			return true, true, err
 		}
 
 		args := []string{"--upgrade"}
@@ -155,7 +150,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 			// do verbose rsync if debug is turned on
 			args = append(args, "--debug")
 		}
-		err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
+		err := di.RunOnce(imageName, ociInstallerName, []string{instK8sDir + ":/opt/pwx", "/etc/pwx:/etc/pwx"},
 			[]string{"/runc-entry-point.sh"}, args)
 		if err != nil {
 			logrus.WithError(err).Error("Could not install ", imageName)
@@ -173,8 +168,19 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	}
 
 	// Compose startup-line for PX-RunC
-	args := make([]string, 0, 1+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
-	args = append(args, "/opt/pwx/bin/px-runc", "install")
+	args := make([]string, 0, 6+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
+	if pxNeedsInstall {
+		// NOTE: we dumped the OCI into a separate directory!
+		// now we need a tweaked install-- example /opt/pwx/k8s/bin/px-runc install -oci /opt/pwx/k8s/oci -sysd /dev/null -c zox-dbg-mk126 -m enp0s8 -d enp0s8 -s /dev/sdc
+		args = append(args, path.Join(instK8sDir, "bin/px-runc"), "install", "-oci", path.Join(instK8sDir, "oci"), "-sysd", "/dev/null")
+	} else {
+		args = append(args, "/opt/pwx/bin/px-runc", "install")
+	}
+
+	if len(cfg.Args) == 0 {
+		logrus.Warn("No arguments provided, taking this container's args: ", os.Args[1:])
+		cfg.Args = os.Args[1:]
+	}
 	if strings.HasSuffix(strings.ToLower(cfg.Args[0]), "install") {
 		// skip INSTALL/UNINSTALL arg...
 		args = append(args, cfg.Args[1:]...)
@@ -201,7 +207,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	var installOutput cachingOutput
 	if err = ociService.RunExternal(&installOutput, args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
-		return true, err
+		return pxNeedsInstall, true, err
 	}
 
 	// figure out if update required due to config change or other reasons
@@ -215,8 +221,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		if err = ociService.Enable(); err != nil {
 			logrus.WithError(err).Error("Could not enable service.")
 		}
+	} else if pxNeedsInstall {
+		logrus.Info("Portworx service restart required due to OCI upgrade")
+		pxNeedsRestart = true
 	} else if newUnitSt, err := os.Stat(pxUnitFile); err != nil {
-		return true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
+		return pxNeedsInstall, true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
 	} else if newUnitSt.ModTime().Sub(oldUnitSt.ModTime()) > 0 {
 		logrus.Info("Portworx service restart required due to updated ", pxUnitFile)
 		pxNeedsRestart = true
@@ -234,7 +243,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
 		pxNeedsRestart = true
 	}
-	return pxNeedsRestart, nil
+	return pxNeedsInstall, pxNeedsRestart, nil
 }
 
 func validateMounted(mounts ...string) error {
@@ -264,6 +273,116 @@ func validateMounted(mounts ...string) error {
 	}
 
 	return err
+}
+
+// isExist returns TRUE only if path exists
+func isExist(parts ...string) bool {
+	path := path.Join(parts...)
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
+}
+
+// switchOciInstall moves the new OCI-rootfs at {optK8sDir}, to the original /opt/pwx
+func switchOciInstall() error {
+	logrus.Infof("Finalizing OCI install -- Moving temp OCI image from %s/ to /opt/pwx/", instK8sDir)
+
+	success := false
+
+	if isExist(instScratchDir) {
+		logrus.Warnf("Directory %s not empty (purging now)", instScratchDir)
+		os.RemoveAll(instScratchDir)
+	}
+	err := os.MkdirAll(path.Join(instScratchDir, "oci"), 0700)
+	if err != nil {
+		return fmt.Errorf("Could not create %s: %s", instScratchDir, err)
+	}
+
+	ociParts := strings.Fields("bin oci/rootfs oci/config.json")
+
+	// schedule rollback (if required) and cleanup
+	defer func() {
+		if !success {
+			logrus.Warnf("ROLLBACK: Rolling back %s/{bin,oci/*} to /opt/pwx/", instScratchDir)
+			for _, p := range ociParts {
+				if isExist(instScratchDir, p) {
+					org, scr := path.Join("/opt/pwx", p), path.Join(instScratchDir, p)
+					if err = os.RemoveAll(org); err != nil {
+						logrus.WithError(err).Warn("Could not remove ", org)
+					}
+					logrus.Warn("ROLLBACK: Removed ", org)
+
+					if err = os.Rename(scr, org); err != nil {
+						logrus.WithError(err).Warnf("Could not rollback %s to %s", scr, org)
+					}
+					logrus.Warnf("ROLLBACK: Moved %s to %s", scr, org)
+				}
+			}
+			logrus.Warn("ROLLBACK: Rollback completed.")
+		}
+		// fire off general async cleanup
+		go func() {
+			toRm := []string{instK8sDir, instScratchDir}
+			logrus.Info("ASYNC: Launched deletion of ", toRm)
+			for _, dir := range toRm {
+				if err = os.RemoveAll(dir); err != nil {
+					logrus.WithError(err).Warn("Could not remove ", dir)
+				}
+			}
+			logrus.Info("ASYNC: Deletion completed.")
+		}()
+	}()
+
+	if err = ociService.Stop(); err != nil {
+		logrus.WithError(err).Warn("Error stopping service (cont)")
+		// let's still continue, and attempt upgrade w/ the service "live"
+	}
+
+	logrus.Infof("Moving old /opt/pwx/{bin,oci/*} to %s; moving %s/{bin,oci/*} to /opt/pwx/", instScratchDir, instK8sDir)
+	for _, p := range ociParts {
+		// mv <orig> to <scratch> ...
+		org, neo, scr := path.Join("/opt/pwx", p), path.Join(instK8sDir, p), path.Join(instScratchDir, p)
+		if isExist(org) {
+			if err = os.Rename(org, scr); err != nil {
+				logrus.WithError(err).Errorf("Could not move %s to %s", org, scr)
+				return fmt.Errorf("Could not move %s to %s: %s", org, scr, err)
+			}
+			logrus.Infof("> mv %s %s -OK.", org, scr)
+		}
+
+		// mv <new> to <orig> ...
+		if err = os.Rename(neo, org); err != nil {
+			logrus.WithError(err).Errorf("Could not move %s to %s", neo, org)
+			return fmt.Errorf("Could not move %s to %s: %s", neo, org, err)
+		}
+		logrus.Infof("> mv %s %s -OK.", neo, org)
+	}
+	// re-running the install
+	logrus.Info("OCI bits moved - reinstalling the PX-RunC")
+	if err = ociService.RunExternal(nil, "/opt/pwx/bin/px-runc", "install"); err != nil {
+		return fmt.Errorf("Could not run `px-runc install`: %s", err)
+	}
+	success = true
+	return nil
+}
+
+func finalizePxOciInstall(installed bool) error {
+
+	if installed {
+		if err := switchOciInstall(); err != nil {
+			return err
+		}
+	}
+
+	logrus.Warn("Reloading + Restarting portworx service")
+	err := ociService.Reload()
+	if err != nil {
+		logrus.WithError(err).Warn("Error reloading service (cont)")
+	}
+	err = ociService.Restart()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func doInstall() error {
@@ -304,20 +423,14 @@ func doInstall() error {
 
 	// TODO: Sanity checks for options
 	logrus.Debugf("OPTIONS:: %+v\n", opts)
-	isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
+	wasInstallRequired, isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
 		return fmt.Errorf("Could not install Portworx service: %s", err)
 	}
 
-	if isRestartRequired {
-		logrus.Warn("Reloading + Restarting portworx service")
-		err = ociService.Reload()
-		if err != nil {
-			logrus.WithError(err).Warn("Error reloading service (cont)")
-		}
-		err = ociService.Restart()
-		if err != nil {
-			return err
+	if wasInstallRequired || isRestartRequired {
+		if err = finalizePxOciInstall(wasInstallRequired); err != nil {
+			return fmt.Errorf("Could not finalize OCI install: %s", err)
 		}
 	} else {
 		logrus.Info("Portworx service restart not required.")
@@ -337,10 +450,7 @@ func doUninstall() error {
 	}
 
 	logrus.Info("Removing Portworx service bind-mount (if any) and uninstall")
-	if err := ociService.Remove(); err != nil {
-		return err
-	}
-	return nil
+	return ociService.Remove()
 }
 
 // getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
@@ -437,7 +547,7 @@ func watchNodeLabels(node *v1.Node) error {
 			utils.DisablePx(node)
 		} else {
 			logrus.Warn("Label 'px/enable=false' set directly, not removing the OCI install" +
-					" (use px/enable=remove to uninstall)")
+				" (use px/enable=remove to uninstall)")
 		}
 	} else if req := utils.GetServiceRequest(node); req != "" {
 		if req == lastServiceCmd {
