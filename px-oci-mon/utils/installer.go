@@ -119,6 +119,13 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 		AutoRemove: false,
 	}
 
+	logrus.Infof("Removing old container %s (if any)", cntr)
+	err := di.cli.ContainerRemove(di.ctx, cntr, types.ContainerRemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	})
+	logrus.WithError(err).Debug("Old container removed")
+
 	logrus.Info("Creating container from image ", name)
 	logrus.Debugf("> CONF: %+v  /  HOST: %+v", contConf, hostConf)
 	resp, err := di.cli.ContainerCreate(di.ctx, &contConf, &hostConf, nil, cntr)

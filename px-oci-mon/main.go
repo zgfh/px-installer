@@ -9,7 +9,6 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/portworx/px-installer/px-oci-mon/utils"
 	"github.com/portworx/sched-ops/k8s"
@@ -18,15 +17,15 @@ import (
 )
 
 const (
-	ociInstallerImage      = "portworx/px-enterprise:1.2.11.3"
-	ociInstallerNamePrefix = "px-oci-installer"
-	hostProcMount          = "/host_proc/1/ns/mnt"
-	baseDir                = "/opt/pwx/oci"
-	baseServiceName        = "portworx"
-	baseServiceFileFmt     = "/etc/systemd/system/%s.service"
-	pxConfigFile           = "/etc/pwx/config.json"
-	pxImageKey             = "PX_IMAGE"
-	pxImageIDKey           = "PX_IMAGE_ID"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11.3"
+	ociInstallerName   = "px-oci-installer"
+	hostProcMount      = "/host_proc/1/ns/mnt"
+	baseDir            = "/opt/pwx/oci"
+	baseServiceName    = "portworx"
+	baseServiceFileFmt = "/etc/systemd/system/%s.service"
+	pxConfigFile       = "/etc/pwx/config.json"
+	pxImageKey         = "PX_IMAGE"
+	pxImageIDKey       = "PX_IMAGE_ID"
 )
 
 var (
@@ -156,8 +155,6 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 			// do verbose rsync if debug is turned on
 			args = append(args, "--debug")
 		}
-
-		ociInstallerName := fmt.Sprintf("%s-%d", ociInstallerNamePrefix, time.Now().Unix())
 		err := di.RunOnce(imageName, ociInstallerName, []string{"/opt/pwx:/opt/pwx", "/etc/pwx:/etc/pwx"},
 			[]string{"/runc-entry-point.sh"}, args)
 		if err != nil {
@@ -440,7 +437,7 @@ func watchNodeLabels(node *v1.Node) error {
 			utils.DisablePx(node)
 		} else {
 			logrus.Warn("Label 'px/enable=false' set directly, not removing the OCI install" +
-				" (use px/enable=remove to uninstall)")
+					" (use px/enable=remove to uninstall)")
 		}
 	} else if req := utils.GetServiceRequest(node); req != "" {
 		if req == lastServiceCmd {
