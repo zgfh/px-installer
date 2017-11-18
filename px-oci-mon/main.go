@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"os/exec"
 	"path"
 	"regexp"
 	"runtime"
@@ -141,9 +142,6 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	if pxNeedsInstall {
 		logrus.Info("Installing/Upgrading Portworx OCI files (restart pending)")
-		if err := ociService.Stop(); err != nil {
-			return true, true, err
-		}
 
 		args := []string{"--upgrade"}
 		if debugsOn {
@@ -282,6 +280,21 @@ func isExist(parts ...string) bool {
 	return !os.IsNotExist(err)
 }
 
+// moveFileOrDir moves a file or a directory from one location to another
+func moveFileOrDir(src, dest string) error {
+	// os.Rename(src, dest) -- cannot use in case of moves across mountpoints
+	cmd := exec.Command("/bin/mv", src, dest)
+	var out bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &out
+	err := cmd.Run()
+
+	if err != nil {
+		logrus.WithError(err).WithField("out", out.String()).Errorf("Could not move %s to %s", src, dest)
+		err = fmt.Errorf("Could not move %s to %s: %s", src, dest, err)
+	}
+	return err
+}
+
 // switchOciInstall moves the new OCI-rootfs at {optK8sDir}, to the original /opt/pwx
 func switchOciInstall() error {
 	logrus.Infof("Finalizing OCI install -- Moving temp OCI image from %s/ to /opt/pwx/", instK8sDir)
@@ -311,10 +324,11 @@ func switchOciInstall() error {
 					}
 					logrus.Warn("ROLLBACK: Removed ", org)
 
-					if err = os.Rename(scr, org); err != nil {
-						logrus.WithError(err).Warnf("Could not rollback %s to %s", scr, org)
+					if err = moveFileOrDir(scr, org); err != nil {
+						logrus.WithError(err).Warnf("Rollback %s FAILED", p)
+					} else {
+						logrus.Warnf("ROLLBACK: Moved %s to %s", scr, org)
 					}
-					logrus.Warnf("ROLLBACK: Moved %s to %s", scr, org)
 				}
 			}
 			logrus.Warn("ROLLBACK: Rollback completed.")
@@ -342,17 +356,15 @@ func switchOciInstall() error {
 		// mv <orig> to <scratch> ...
 		org, neo, scr := path.Join("/opt/pwx", p), path.Join(instK8sDir, p), path.Join(instScratchDir, p)
 		if isExist(org) {
-			if err = os.Rename(org, scr); err != nil {
-				logrus.WithError(err).Errorf("Could not move %s to %s", org, scr)
-				return fmt.Errorf("Could not move %s to %s: %s", org, scr, err)
+			if err = moveFileOrDir(org, scr); err != nil {
+				return err
 			}
 			logrus.Infof("> mv %s %s -OK.", org, scr)
 		}
 
 		// mv <new> to <orig> ...
-		if err = os.Rename(neo, org); err != nil {
-			logrus.WithError(err).Errorf("Could not move %s to %s", neo, org)
-			return fmt.Errorf("Could not move %s to %s: %s", neo, org, err)
+		if err = moveFileOrDir(neo, org); err != nil {
+			return err
 		}
 		logrus.Infof("> mv %s %s -OK.", neo, org)
 	}
