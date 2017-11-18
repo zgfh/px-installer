@@ -13,6 +13,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const clientApiDefaultVersion = "1.23"
+
 // DockerInstaller is a Docker client specialized for Container installation
 type DockerInstaller struct {
 	auth string
@@ -24,8 +26,13 @@ type DockerInstaller struct {
 func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 	auth, ctx := "", context.Background()
 
+	cliVer := os.Getenv("DOCKER_API_VERSION")
+	if cliVer == "" {
+		cliVer = clientApiDefaultVersion
+	}
+
 	// NOTE: see https://docs.docker.com/engine/api/v1.26/#section/Versioning
-	cli, err := client.NewClient("unix:///var/run/docker.sock", "1.23", nil, nil)
+	cli, err := client.NewClient("unix:///var/run/docker.sock", cliVer, nil, nil)
 	if err != nil {
 		return nil, err
 	}
