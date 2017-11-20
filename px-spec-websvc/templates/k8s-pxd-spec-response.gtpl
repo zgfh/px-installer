@@ -113,7 +113,6 @@ spec:
               port: 9001
           readinessProbe:
             periodSeconds: 10
-            initialDelaySeconds: 20
             httpGet:
               host: 127.0.0.1
               path: /health
