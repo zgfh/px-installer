@@ -116,8 +116,8 @@ spec:
             initialDelaySeconds: 20
             httpGet:
               host: 127.0.0.1
-              path: /v1/cluster/nodehealth
-              port: 9001
+              path: /health
+              port: 9015
           securityContext:
             privileged: true
           volumeMounts:
