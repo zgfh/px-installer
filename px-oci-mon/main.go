@@ -38,6 +38,7 @@ var (
 	lastPxDisabled     = false
 	lastServiceCmd     = ""
 	ociService         *utils.OciServiceControl
+	ociRestServer      *utils.OciRESTServlet
 	ociPrivateMounts   = map[string]bool{
 		"/etc/pwx:/etc/pwx":                         true,
 		"/opt/pwx:/opt/pwx":                         true,
@@ -109,7 +110,13 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	pxNeedsRestart := false
 
-	err := di.PullImage(imageName)
+	downloadCbFn := func() error {
+		logrus.Info("Docker image download detected - assuming upgrade and setting OCI-mon to unhealthy")
+		ociRestServer.SetStateInstalling()
+		return nil
+	}
+
+	err := di.PullImageCb(imageName, downloadCbFn)
 	if err != nil {
 		logrus.WithError(err).Error("Could not pull ", imageName)
 		usage("Could not pull " + imageName +
@@ -129,6 +136,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 				logrus.Infof("Installed image ID %s same as pulled image ID %s",
 					installedID[7:19], pulledID[7:19])
 				pxNeedsInstall = false
+				ociRestServer.SetStateInstallFinished()
 			} else {
 				logrus.Infof("Installed image ID %s _DIFFERENT_ than pulled image ID %s",
 					installedID[7:19], pulledID[7:19])
@@ -447,6 +455,7 @@ func doInstall() error {
 	} else {
 		logrus.Info("Portworx service restart not required.")
 	}
+	ociRestServer.SetStateInstallFinished()
 	return nil
 }
 
@@ -611,6 +620,10 @@ func main() {
 	}
 
 	ociService = utils.NewOciServiceControl(hostProcMount, baseServiceName)
+	ociRestServer = utils.NewRESTServlet(ociService)
+
+	logrus.Info("Activating REST server")
+	ociRestServer.Start()
 
 	meNode, err := utils.FindMyNode()
 	if err != nil || meNode == nil {
@@ -630,6 +643,7 @@ func main() {
 		logrus.Error(err)
 		os.Exit(-1)
 	}
+	ociRestServer.SetStateInstallFinished()
 
 	logrus.Info("Activating node-watcher")
 	k8s.Instance().WatchNode(meNode, watchNodeLabels)
