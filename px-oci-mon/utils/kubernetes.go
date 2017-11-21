@@ -21,6 +21,7 @@ var (
 		"false", // please keep first, keyword used w/ k8s uninstall
 		"uninstall",
 		"remove",
+		"rm",
 	}
 )
 
@@ -61,7 +62,7 @@ func GetLocalIPList(includeHostname bool) ([]string, error) {
 	return ipList, nil
 }
 
-func in_array(needle string, stack ...string) (has bool) {
+func inArray(needle string, stack ...string) (has bool) {
 	for i := range stack {
 		if has = needle == stack[i]; has {
 			break
@@ -74,7 +75,7 @@ func in_array(needle string, stack ...string) (has bool) {
 func IsPxDisabled(n *k8s_types.Node) bool {
 	if lb, has := n.GetLabels()[enablementKey]; has {
 		lb = strings.ToLower(lb)
-		return in_array(lb, disabledLabels...)
+		return inArray(lb, disabledLabels...)
 	}
 	logrus.Debugf("No px-enabled label found on node %s - assuming 'enabled'", n.GetName())
 	return false
@@ -84,7 +85,7 @@ func IsPxDisabled(n *k8s_types.Node) bool {
 func IsUninstallRequested(n *k8s_types.Node) bool {
 	if lb, has := n.GetLabels()[enablementKey]; has {
 		lb = strings.ToLower(lb)
-		return in_array(lb, disabledLabels[1:]...)
+		return inArray(lb, disabledLabels[1:]...)
 	}
 	return false
 }

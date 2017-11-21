@@ -14,6 +14,8 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
+const clientAPIDefaultVersion = "1.23"
+
 // DockerInstaller is a Docker client specialized for Container installation
 type DockerInstaller struct {
 	auth string
@@ -25,8 +27,13 @@ type DockerInstaller struct {
 func NewDockerInstaller(user, pass string) (*DockerInstaller, error) {
 	auth, ctx := "", context.Background()
 
+	cliVer := os.Getenv("DOCKER_API_VERSION")
+	if cliVer == "" {
+		cliVer = clientAPIDefaultVersion
+	}
+
 	// NOTE: see https://docs.docker.com/engine/api/v1.26/#section/Versioning
-	cli, err := client.NewClient("unix:///var/run/docker.sock", "1.23", nil, nil)
+	cli, err := client.NewClient("unix:///var/run/docker.sock", cliVer, nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +125,13 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 		Binds:      binds,
 		AutoRemove: false,
 	}
+
+	logrus.Infof("Removing old container %s (if any)", cntr)
+	err := di.cli.ContainerRemove(di.ctx, cntr, types.ContainerRemoveOptions{
+		RemoveVolumes: true,
+		Force:         true,
+	})
+	logrus.WithError(err).Debug("Old container removed")
 
 	logrus.Info("Creating container from image ", name)
 	logrus.Debugf("> CONF: %+v  /  HOST: %+v", contConf, hostConf)
