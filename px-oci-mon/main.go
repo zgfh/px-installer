@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11.3"
+	ociInstallerImage  = "portworx/px-enterprise:1.2.11.4"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
 	baseDir            = "/opt/pwx/oci"
