@@ -16,11 +16,20 @@ import (
 )
 
 const (
-	currentPxImage   = "portworx/px-enterprise:1.2.11.4"
-	currentRunCImage = "portworx/oci-monitor:1.2.11.4"
-	templateVersion  = "v2"
+	templateVersion = "v2"
+	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
+	pxImagePrefix  = "portworx/px-enterprise"
+	ociImagePrefix = "portworx/oci-monitor"
+	defaultPXTAG   = "1.2.11.4"
 )
 
+var (
+	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
+	// to set portworx/px-enterprise:1.2.3)
+	PXTAG string
+)
+
+// Params contains all parameters passed to us via HTTP.
 type Params struct {
 	Type        string `schema:"type"   deprecated:"installType"`
 	Cluster     string `schema:"c"      deprecated:"cluster"`
@@ -105,9 +114,10 @@ func generate(templateFile string, p *Params) (string, error) {
 
 	// select PX-Image
 	if p.PxImage == "" {
-		p.PxImage = currentPxImage
 		if p.IsRunC {
-			p.PxImage = currentRunCImage
+			p.PxImage = ociImagePrefix + ":" + PXTAG
+		} else {
+			p.PxImage = pxImagePrefix + ":" + PXTAG
 		}
 	}
 
@@ -189,6 +199,10 @@ func sendUsage(w http.ResponseWriter) {
 
 func main() {
 	parseStrict := len(os.Args) > 1 && os.Args[1] == "-strict"
+
+	if PXTAG == "" {
+		PXTAG = defaultPXTAG
+	}
 
 	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
 		p, err := parseRequest(r, parseStrict)

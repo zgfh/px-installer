@@ -18,7 +18,6 @@ import (
 )
 
 const (
-	ociInstallerImage  = "portworx/px-enterprise:1.2.11.4"
 	ociInstallerName   = "px-oci-installer"
 	hostProcMount      = "/host_proc/1/ns/mnt"
 	baseDir            = "/opt/pwx/oci"
@@ -29,6 +28,9 @@ const (
 	pxImageIDKey       = "PX_IMAGE_ID"
 	instK8sDir         = "/opt/pwx/oci/inst-k8s"
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
+	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
+	pxImagePrefix = "portworx/px-enterprise"
+	defaultPXTAG  = "1.2.11.4"
 )
 
 var (
@@ -46,6 +48,9 @@ var (
 		"/proc/1/ns:/host_proc/1/ns":                true,
 		"/var/run/docker.sock:/var/run/docker.sock": true,
 	}
+	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
+	// to set portworx/px-enterprise:1.2.3)
+	PXTAG string
 )
 
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
@@ -408,7 +413,7 @@ func finalizePxOciInstall(installed bool) error {
 func doInstall() error {
 	pxImage := os.Getenv(pxImageKey)
 	if pxImage == "" {
-		pxImage = ociInstallerImage
+		pxImage = pxImagePrefix + ":" + PXTAG
 	}
 
 	id, err := utils.GetMyContainerID()
@@ -604,6 +609,10 @@ func main() {
 	}
 	if debugsOn {
 		logrus.SetLevel(logrus.DebugLevel)
+	}
+
+	if PXTAG == "" {
+		PXTAG = defaultPXTAG
 	}
 
 	// Validate required OCI mounts are all valid and accounted for

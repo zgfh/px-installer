@@ -21,6 +21,12 @@ ifndef DOCKER_HUB_TAG
     $(warning DOCKER_HUB_TAG not defined, using '$(DOCKER_HUB_TAG)' instead)
 endif
 
+ifdef PXTAG
+    LDFLAGS += -X main.PXTAG=$(PXTAG)
+    DOCKER_HUB_TAG := $(PXTAG)
+    $(warning Using PXTAG '$(PXTAG)' to set up dependencies, and DOCKER_HUB_TAG)
+endif
+
 GO		:= go
 GOENV		:= GOOS=linux GOARCH=amd64
 SUDO		:= sudo
@@ -29,12 +35,13 @@ WEBSVC_IMG	:= $(DOCKER_HUB_REPO)/$(DOCKER_HUB_WEBSVC_IMAGE):$(DOCKER_HUB_TAG)
 
 BUILD_TYPE=static
 ifeq ($(BUILD_TYPE),static)
-    BUILD_OPTIONS += -v -a --ldflags "-extldflags -static"
+    LDFLAGS += -extldflags -static
+    BUILD_OPTIONS += -v -a -ldflags "$(LDFLAGS)"
     GOENV += CGO_ENABLED=0
 else ifeq ($(BUILD_TYPE),debug)
-    BUILD_OPTIONS += -i -v -gcflags "-N -l"
+    BUILD_OPTIONS += -i -v -gcflags "-N -l" -ldflags "$(LDFLAGS)"
 else
-    BUILD_OPTIONS += -i -v
+    BUILD_OPTIONS += -i -v -ldflags "$(LDFLAGS)"
 endif
 
 ifeq ($(shell id -u),0)
