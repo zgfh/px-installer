@@ -96,6 +96,7 @@ spec:
              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
+             {{- if .SecretType}}"-secret_type", "{{.SecretType}}", {{end}}
              {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
              {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
              {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}
@@ -243,7 +244,8 @@ spec:
              {{- if .Cluster}}"-c", "{{.Cluster}}", {{end}}
              {{- if .DIface}}"-d", "{{.DIface}}", {{end}}
              {{- if .MIface}}"-m", "{{.MIface}}", {{end}}
-             {{- if .Drives}}{{.Drives}}{{end}},
+             {{- if .Drives}}{{.Drives}}, {{end}}
+             {{- if .SecretType}}"-secret_type", "{{.SecretType}}", {{end}}
              {{- if .EtcdPasswd}}"-userpwd", "{{.EtcdPasswd}}", {{end}}
              {{- if .EtcdCa}}"-ca", "{{.EtcdCa}}", {{end}}
              {{- if .EtcdCert}}"-cert", "{{.EtcdCert}}", {{end}}

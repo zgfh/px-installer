@@ -100,8 +100,8 @@
       <tr>
         <td>
           <SELECT NAME="type" onChange="proc(this.form)">
-            <OPTION value="dock">Docker container</OPTION>
             <OPTION value="oci">OCI container</OPTION>
+            <OPTION value="dock">Docker container</OPTION>
           </SELECT>
         </td>
         <td><code>type:</code> Select Portworx deployment type.</td>
@@ -166,6 +166,17 @@
           use a drive or partition that is mounted. (example: <var>true</var>)</td>
       </tr>
       <tr>
+        <td>
+          <SELECT NAME="st" onChange="proc(this.form)">
+            <OPTION value="">none</OPTION>
+            <OPTION value="aws">AWS</OPTION>
+            <OPTION value="kvdb">kvdb</OPTION>
+            <OPTION value="vault">vault</OPTION>
+          </SELECT>
+        </td>
+        <td><code>st:</code> Select the secrets type. (example: <var>vault</var>)</td>
+      </tr>
+      <tr>
         <td COLSPAN="2" ALIGN="center"><small>KVDB CONFIGURATION PARAMETERS</small></td>
       </tr>
       <tr>
@@ -224,7 +235,7 @@
     var sep = "?"
     var s = ""
     for (var i = 0, el; el = elements[i++];) {
-      if ((el.type === "text" && el.value != "") || (el.type === "select-one")) {
+      if ((el.type === "text" || el.type === "select-one") && el.value != "") {
         s += sep + el.name + "="
         if (el.name == "e" || el.name == "env") {
           s += encodeURIComponent(el.value)
