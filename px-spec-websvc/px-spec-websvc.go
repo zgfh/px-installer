@@ -55,6 +55,7 @@ type Params struct {
 	MasterLess  bool   `schema:"-"      deprecated:"-"`
 	IsRunC      bool   `schema:"-"      deprecated:"-"`
 	TmplVer     string `schema:"-"      deprecated:"-"`
+	Origin      string `schema:"-"      deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
@@ -238,6 +239,14 @@ func main() {
 			sendError(http.StatusBadRequest, err, w)
 			return
 		}
+
+		// Populate origin, so we can leave it as comment in templates
+		p.Origin = "unknown"
+		if r.Host != "" && r.URL != nil {
+			p.Origin = fmt.Sprintf("http://%s%s", r.Host, r.URL)
+		}
+		log.Printf("Client %q - REQ %s from Referer %q", r.RemoteAddr, p.Origin, r.Referer())
+		p.Origin = strings.Replace(p.Origin, "%", "%%", -1)
 
 		template := "k8s-pxd-spec-response.gtpl"
 		if len(p.ZeroStorage) != 0 && (len(p.Master) == 0 || p.Master == "true") {
