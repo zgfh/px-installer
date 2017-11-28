@@ -8,7 +8,7 @@ import (
 
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
-	k8s_types "k8s.io/client-go/pkg/api/v1"
+	"k8s.io/api/core/v1"
 )
 
 const (
@@ -72,7 +72,7 @@ func inArray(needle string, stack ...string) (has bool) {
 }
 
 // IsPxDisabled reports if PX is disabled on this node.
-func IsPxDisabled(n *k8s_types.Node) bool {
+func IsPxDisabled(n *v1.Node) bool {
 	if lb, has := n.GetLabels()[enablementKey]; has {
 		lb = strings.ToLower(lb)
 		return inArray(lb, disabledLabels...)
@@ -82,7 +82,7 @@ func IsPxDisabled(n *k8s_types.Node) bool {
 }
 
 // IsUninstallRequested reports if PX should uninstall on this node.
-func IsUninstallRequested(n *k8s_types.Node) bool {
+func IsUninstallRequested(n *v1.Node) bool {
 	if lb, has := n.GetLabels()[enablementKey]; has {
 		lb = strings.ToLower(lb)
 		return inArray(lb, disabledLabels[1:]...)
@@ -91,7 +91,7 @@ func IsUninstallRequested(n *k8s_types.Node) bool {
 }
 
 // DisablePx will replace force-set label to "false", thus triggering the K8s uninstall
-func DisablePx(n *k8s_types.Node) error {
+func DisablePx(n *v1.Node) error {
 	lb, _ := n.GetLabels()[enablementKey]
 	lb = strings.ToLower(lb)
 	logrus.Warnf("Resetting k8s label '%s=%s' to '%s' -- expect cleanup by k8s",
@@ -100,7 +100,7 @@ func DisablePx(n *k8s_types.Node) error {
 }
 
 // GetServiceRequest returns the state of the "px/service" label
-func GetServiceRequest(n *k8s_types.Node) string {
+func GetServiceRequest(n *v1.Node) string {
 	if lb, has := n.GetLabels()[serviceKey]; has {
 		return strings.ToLower(lb)
 	}
@@ -109,13 +109,13 @@ func GetServiceRequest(n *k8s_types.Node) string {
 }
 
 // RemoveServiceLabel deletes the operations label off the node
-func RemoveServiceLabel(n *k8s_types.Node) error {
+func RemoveServiceLabel(n *v1.Node) error {
 	logrus.Infof("Removing k8s label %s=%s", serviceKey, GetServiceRequest(n))
 	return k8s.Instance().RemoveLabelOnNode(n.GetName(), serviceKey)
 }
 
 // FindMyNode finds LOCAL Node from Kubernetes env.
-func FindMyNode() (*k8s_types.Node, error) {
+func FindMyNode() (*v1.Node, error) {
 	ipList, err := GetLocalIPList(true)
 	if err != nil {
 		return nil, fmt.Errorf("Could not find my IPs/Hostname: %s", err)
