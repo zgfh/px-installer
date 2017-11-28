@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/portworx/sched-ops/task"
+	apps_api "k8s.io/api/apps/v1beta2"
+	"k8s.io/api/core/v1"
+	storage_api "k8s.io/api/storage/v1"
 	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/typed/apps/v1beta1"
-	"k8s.io/client-go/pkg/api/v1"
-	apps_api "k8s.io/client-go/pkg/apis/apps/v1beta1"
-	storage_api "k8s.io/client-go/pkg/apis/storage/v1"
+	"k8s.io/client-go/kubernetes/typed/apps/v1beta2"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -32,6 +32,7 @@ type Ops interface {
 	ServiceOps
 	StatefulSetOps
 	DeploymentOps
+	DaemonSetOps
 	PodOps
 	StorageClassOps
 	PersistentVolumeClaimOps
@@ -111,6 +112,14 @@ type DeploymentOps interface {
 	GetDeploymentPods(*apps_api.Deployment) ([]v1.Pod, error)
 	// DescribeDeployment gets the deployment status
 	DescribeDeployment(string, string) (*apps_api.DeploymentStatus, error)
+}
+
+// DaemonSetOps is an interface to perform k8s daemon set operations
+type DaemonSetOps interface {
+	// GetDaemonSet gets the the daemon set with given name
+	GetDaemonSet(string, string) (*apps_api.DaemonSet, error)
+	// UpdateDaemonSet updates the given daemon set
+	UpdateDaemonSet(*apps_api.DaemonSet) error
 }
 
 // PodOps is an interface to perform k8s pod operations
@@ -252,8 +261,7 @@ func (k *k8sOps) IsNodeReady(name string) error {
 		case v1.NodeConditionType(v1.NodeOutOfDisk),
 			v1.NodeConditionType(v1.NodeMemoryPressure),
 			v1.NodeConditionType(v1.NodeDiskPressure),
-			v1.NodeConditionType(v1.NodeNetworkUnavailable),
-			v1.NodeConditionType(v1.NodeInodePressure):
+			v1.NodeConditionType(v1.NodeNetworkUnavailable):
 			if condition.Status != v1.ConditionStatus(v1.ConditionFalse) {
 				return fmt.Errorf("node: %v is not ready as condition: %v (%v) is %v. Reason: %v",
 					name, condition.Type, condition.Message, condition.Status, condition.Reason)
@@ -552,8 +560,9 @@ func (k *k8sOps) ValidateDeployment(deployment *apps_api.Deployment) error {
 				if vol.PersistentVolumeClaim != nil {
 					foundPVC = true
 
-					claim, err := k.client.PersistentVolumeClaims(dep.Namespace).Get(vol.PersistentVolumeClaim.ClaimName,
-						meta_v1.GetOptions{})
+					claim, err := k.client.CoreV1().
+						PersistentVolumeClaims(dep.Namespace).
+						Get(vol.PersistentVolumeClaim.ClaimName, meta_v1.GetOptions{})
 					if err != nil {
 						return "", err
 					}
@@ -671,7 +680,7 @@ func (k *k8sOps) GetDeploymentPods(deployment *apps_api.Deployment) ([]v1.Pod, e
 		return nil, err
 	}
 
-	rSets, err := k.client.ReplicaSets(deployment.Namespace).List(meta_v1.ListOptions{})
+	rSets, err := k.appsClient().ReplicaSets(deployment.Namespace).List(meta_v1.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -688,6 +697,37 @@ func (k *k8sOps) GetDeploymentPods(deployment *apps_api.Deployment) ([]v1.Pod, e
 }
 
 // Deployment APIs - END
+
+// DaemonSet APIs - BEGIN
+
+func (k *k8sOps) GetDaemonSet(name, namespace string) (*apps_api.DaemonSet, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	if len(namespace) == 0 {
+		namespace = v1.NamespaceDefault
+	}
+
+	ds, err := k.appsClient().DaemonSets(namespace).Get(name, meta_v1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return ds, nil
+}
+
+func (k *k8sOps) UpdateDaemonSet(ds *apps_api.DaemonSet) error {
+	if err := k.initK8sClient(); err != nil {
+		return err
+	}
+
+	if _, err := k.appsClient().DaemonSets(ds.Namespace).Update(ds); err != nil {
+		return err
+	}
+	return nil
+}
+
+// DaemonSet APIs - END
 
 // StatefulSet APIs - BEGIN
 
@@ -787,7 +827,7 @@ func (k *k8sOps) ValidateTerminatedStatefulSet(statefulset *apps_api.StatefulSet
 			return "", err
 		}
 
-		sset, err := k.client.AppsV1beta1().StatefulSets(statefulset.Namespace).Get(statefulset.Name, meta_v1.GetOptions{})
+		sset, err := k.appsClient().StatefulSets(statefulset.Namespace).Get(statefulset.Name, meta_v1.GetOptions{})
 		if err != nil {
 			if matched, _ := regexp.MatchString(".+ not found", err.Error()); matched {
 				return "", nil
@@ -846,7 +886,7 @@ func (k *k8sOps) GetPods(namespace string) (*v1.PodList, error) {
 		return nil, err
 	}
 
-	return k.client.Pods(namespace).List(meta_v1.ListOptions{})
+	return k.client.CoreV1().Pods(namespace).List(meta_v1.ListOptions{})
 }
 
 func (k *k8sOps) GetPodsByOwner(ownerName string, namespace string) ([]v1.Pod, error) {
@@ -942,7 +982,7 @@ func (k *k8sOps) CreatePersistentVolumeClaim(pvc *v1.PersistentVolumeClaim) (*v1
 		ns = v1.NamespaceDefault
 	}
 
-	return k.client.PersistentVolumeClaims(ns).Create(pvc)
+	return k.client.CoreV1().PersistentVolumeClaims(ns).Create(pvc)
 }
 
 func (k *k8sOps) DeletePersistentVolumeClaim(pvc *v1.PersistentVolumeClaim) error {
@@ -950,7 +990,7 @@ func (k *k8sOps) DeletePersistentVolumeClaim(pvc *v1.PersistentVolumeClaim) erro
 		return err
 	}
 
-	return k.client.PersistentVolumeClaims(pvc.Namespace).Delete(pvc.Name, &meta_v1.DeleteOptions{})
+	return k.client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Delete(pvc.Name, &meta_v1.DeleteOptions{})
 }
 
 func (k *k8sOps) ValidatePersistentVolumeClaim(pvc *v1.PersistentVolumeClaim) error {
@@ -959,7 +999,9 @@ func (k *k8sOps) ValidatePersistentVolumeClaim(pvc *v1.PersistentVolumeClaim) er
 			return "", err
 		}
 
-		result, err := k.client.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
+		result, err := k.client.CoreV1().
+			PersistentVolumeClaims(pvc.Namespace).
+			Get(pvc.Name, meta_v1.GetOptions{})
 		if err != nil {
 			return "", err
 		}
@@ -985,7 +1027,9 @@ func (k *k8sOps) GetVolumeForPersistentVolumeClaim(pvc *v1.PersistentVolumeClaim
 		return "", err
 	}
 
-	result, err := k.client.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
+	result, err := k.client.CoreV1().
+		PersistentVolumeClaims(pvc.Namespace).
+		Get(pvc.Name, meta_v1.GetOptions{})
 	if err != nil {
 		return "", err
 	}
@@ -998,7 +1042,7 @@ func (k *k8sOps) GetPersistentVolumeClaimStatus(pvc *v1.PersistentVolumeClaim) (
 		return nil, err
 	}
 
-	result, err := k.client.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
+	result, err := k.client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -1013,7 +1057,7 @@ func (k *k8sOps) GetPersistentVolumeClaimParams(pvc *v1.PersistentVolumeClaim) (
 
 	params := make(map[string]string)
 
-	result, err := k.client.PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
+	result, err := k.client.CoreV1().PersistentVolumeClaims(pvc.Namespace).Get(pvc.Name, meta_v1.GetOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -1023,9 +1067,9 @@ func (k *k8sOps) GetPersistentVolumeClaimParams(pvc *v1.PersistentVolumeClaim) (
 		return nil, fmt.Errorf("failed to get storage resource for pvc: %v", result.Name)
 	}
 
-	requestGB := int(roundUpSize(capacity.Value(), 1024*1024*1024))
-	requestSizeInBytes := uint64(requestGB * 1024 * 1024 * 1024)
-	params["size"] = fmt.Sprintf("%d", requestSizeInBytes)
+	// We explicitly send the unit with so the client can compare it with correct units
+	requestGB := uint64(roundUpSize(capacity.Value(), 1024*1024*1024))
+	params["size"] = fmt.Sprintf("%dG", requestGB)
 
 	scName, ok := result.Annotations[pvcStorageClassKey]
 	if !ok {
@@ -1058,8 +1102,8 @@ func (k *k8sOps) isPVCShared(pvc *v1.PersistentVolumeClaim) bool {
 
 // PVCs APIs - END
 
-func (k *k8sOps) appsClient() v1beta1.AppsV1beta1Interface {
-	return k.client.AppsV1beta1()
+func (k *k8sOps) appsClient() v1beta2.AppsV1beta2Interface {
+	return k.client.AppsV1beta2()
 }
 
 // getK8sClient instantiates a k8s client
