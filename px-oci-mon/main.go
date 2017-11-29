@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/portworx/px-installer/px-oci-mon/utils"
 	"github.com/portworx/sched-ops/k8s"
@@ -30,7 +31,7 @@ const (
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix = "portworx/px-enterprise"
-	defaultPXTAG  = "1.2.11.5"
+	defaultPXTAG  = "1.2.11.6"
 )
 
 var (
@@ -172,20 +173,24 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 
 	logrus.Info("Installing Portworx OCI service...")
 
-	pxUnitFile := fmt.Sprintf(baseServiceFileFmt, baseServiceName)
-	oldUnitSt, err := os.Stat(pxUnitFile)
-	if err != nil {
-		logrus.WithError(err).Warn("Could not find service-file (is this initial install?)")
-	}
-
 	// Compose startup-line for PX-RunC
 	args := make([]string, 0, 6+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
+	var pxUnitFile string
+	var oldUnitFileModTime time.Time
 	if pxNeedsInstall {
 		// NOTE: we dumped the OCI into a separate directory!
 		// now we need a tweaked install-- example /opt/pwx/k8s/bin/px-runc install -oci /opt/pwx/k8s/oci -sysd /dev/null -c zox-dbg-mk126 -m enp0s8 -d enp0s8 -s /dev/sdc
 		args = append(args, path.Join(instK8sDir, "bin/px-runc"), "install", "-oci", path.Join(instK8sDir, "oci"), "-sysd", "/dev/null")
+		pxUnitFile = ""
 	} else {
 		args = append(args, "/opt/pwx/bin/px-runc", "install")
+
+		pxUnitFile = fmt.Sprintf(baseServiceFileFmt, baseServiceName)
+		if st, err := os.Stat(pxUnitFile); err != nil {
+			logrus.WithError(err).Warn("Could not find service-file (is this initial install?)")
+		} else {
+			oldUnitFileModTime = st.ModTime()
+		}
 	}
 
 	if len(cfg.Args) == 0 {
@@ -221,24 +226,30 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		return pxNeedsInstall, true, err
 	}
 
-	// figure out if update required due to config change or other reasons
+	/*
+	 * figure out if update required due to config change or other reasons
+	 */
 
-	// 1. check status of the unit-file
-	if oldUnitSt == nil {
-		logrus.Info("Portworx service restart required due to initial config.")
-		pxNeedsRestart = true
-		// let's also do reload + enable of the service
-		ociService.Reload()
-		if err = ociService.Enable(); err != nil {
-			logrus.WithError(err).Error("Could not enable service.")
+	// 1. check status of the unit-file (if valid)
+	if pxUnitFile != "" {
+		if oldUnitFileModTime.IsZero() {
+			logrus.Info("Portworx service restart required due to initial config.")
+			pxNeedsRestart = true
+			// let's also do reload + enable of the service
+			if err = ociService.Reload(); err != nil {
+				logrus.WithError(err).Error("Could not reload service.")
+			}
+			if err = ociService.Enable(); err != nil {
+				logrus.WithError(err).Error("Could not enable service.")
+			}
+		} else if newUnitSt, err := os.Stat(pxUnitFile); err != nil {
+			return pxNeedsInstall, true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
+		} else if newUnitSt.ModTime().Sub(oldUnitFileModTime) > 0 {
+			logrus.Info("Portworx service restart required due to updated ", pxUnitFile)
+			pxNeedsRestart = true
 		}
 	} else if pxNeedsInstall {
-		logrus.Info("Portworx service restart required due to OCI upgrade")
-		pxNeedsRestart = true
-	} else if newUnitSt, err := os.Stat(pxUnitFile); err != nil {
-		return pxNeedsInstall, true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
-	} else if newUnitSt.ModTime().Sub(oldUnitSt.ModTime()) > 0 {
-		logrus.Info("Portworx service restart required due to updated ", pxUnitFile)
+		logrus.Info("Portworx service restart required due to OCI upgrade/install")
 		pxNeedsRestart = true
 	}
 
@@ -391,6 +402,7 @@ func switchOciInstall() error {
 }
 
 func finalizePxOciInstall(installed bool) error {
+	initialInstall := !isExist(fmt.Sprintf(baseServiceFileFmt, baseServiceName))
 
 	if installed {
 		if err := switchOciInstall(); err != nil {
@@ -399,12 +411,19 @@ func finalizePxOciInstall(installed bool) error {
 	}
 
 	logrus.Warn("Reloading + Restarting portworx service")
-	err := ociService.Reload()
-	if err != nil {
+
+	if err := ociService.Reload(); err != nil {
 		logrus.WithError(err).Warn("Error reloading service (cont)")
 	}
-	err = ociService.Restart()
-	if err != nil {
+
+	if initialInstall {
+		logrus.Warn("Initial install detected - enabling the Portworx service")
+		if err := ociService.Enable(); err != nil {
+			logrus.WithError(err).Warn("Error enabling service (cont)")
+		}
+	}
+
+	if err := ociService.Restart(); err != nil {
 		return err
 	}
 	return nil
