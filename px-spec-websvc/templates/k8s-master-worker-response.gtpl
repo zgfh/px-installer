@@ -120,8 +120,13 @@ spec:
             periodSeconds: 10
             httpGet:
               host: 127.0.0.1
+            {{- if .IsRunC}}
               path: /health
               port: 9015
+            {{- else}}
+              path: /v1/cluster/nodehealth
+              port: 9001
+            {{- end}}
           securityContext:
             privileged: true
           volumeMounts:
@@ -269,8 +274,13 @@ spec:
             periodSeconds: 10
             httpGet:
               host: 127.0.0.1
+            {{- if .IsRunC}}
               path: /health
               port: 9015
+            {{- else}}
+              path: /v1/cluster/nodehealth
+              port: 9001
+            {{- end}}
           securityContext:
             privileged: true
           volumeMounts:
