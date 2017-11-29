@@ -507,16 +507,16 @@
 			"revisionTime": "2017-08-14T20:04:35Z"
 		},
 		{
-			"checksumSHA1": "YjC3saCnFVaIwFO7Ur5YcOiNVFc=",
+			"checksumSHA1": "qJkwZ0EnpmRgon0ogE5NdeA0sxA=",
 			"path": "github.com/portworx/sched-ops/k8s",
-			"revision": "1764a4a5271c6efea6021a57ae0134ae63822771",
-			"revisionTime": "2017-11-21T02:33:49Z"
+			"revision": "678eff62553e457106ed30059dae87803c7f4640",
+			"revisionTime": "2017-11-29T05:43:27Z"
 		},
 		{
 			"checksumSHA1": "7H6/b0nFnh2kCbmbK/tAb+cvMA8=",
 			"path": "github.com/portworx/sched-ops/task",
-			"revision": "1764a4a5271c6efea6021a57ae0134ae63822771",
-			"revisionTime": "2017-11-21T02:33:49Z"
+			"revision": "678eff62553e457106ed30059dae87803c7f4640",
+			"revisionTime": "2017-11-29T05:43:27Z"
 		},
 		{
 			"checksumSHA1": "BYvROBsiyAXK4sq6yhDe8RgT4LM=",
