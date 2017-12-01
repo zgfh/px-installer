@@ -1,6 +1,5 @@
-FROM alpine:latest
+FROM ubuntu:16.04
 
-RUN apk add --update util-linux
 ADD px-oci-mon /
 ENTRYPOINT [ "/px-oci-mon" ]
 
