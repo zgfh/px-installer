@@ -193,15 +193,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		}
 	}
 
-	if len(cfg.Args) == 0 {
-		logrus.Warn("No arguments provided, taking this container's args: ", os.Args[1:])
-		cfg.Args = os.Args[1:]
-	}
-	if strings.HasSuffix(strings.ToLower(cfg.Args[0]), "install") {
+	if strings.HasSuffix(strings.ToLower(os.Args[1]), "install") {
 		// skip INSTALL/UNINSTALL arg...
-		args = append(args, cfg.Args[1:]...)
+		args = append(args, os.Args[2:]...)
 	} else {
-		args = append(args, cfg.Args...)
+		args = append(args, os.Args[1:]...)
 	}
 
 	// Add Mounts
@@ -423,10 +419,7 @@ func finalizePxOciInstall(installed bool) error {
 		}
 	}
 
-	if err := ociService.Restart(); err != nil {
-		return err
-	}
-	return nil
+	return ociService.Restart()
 }
 
 func doInstall() error {
@@ -616,17 +609,39 @@ func watchNodeLabels(node *v1.Node) error {
 	return nil
 }
 
+func setLogfile(fname string) error {
+	logrus.Infof("Redirecting all output to %s", fname)
+	f, err := os.OpenFile(fname, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(f, "------------------------------------------------------------------------------")
+	os.Stdout, os.Stderr = f, f
+	logrus.SetOutput(f)
+	logrus.Info("Started logging into ", fname)
+	return nil
+}
+
 func main() {
-	// Debugs on?
-	if debugsOn = os.Getenv("DEBUG") != ""; !debugsOn {
-		for _, v := range os.Args[1:] { // skim thorough the debug-opts
-			if v == "--debug" {
-				debugsOn = true
-				break
+	args := make([]string, 0, len(os.Args))
+	for i := 0; i < len(os.Args); i++ {
+		switch os.Args[i] {
+		case "--log":
+			i++
+			if err := setLogfile(os.Args[i]); err != nil {
+				logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
+				os.Exit(1)
 			}
+		case "--debug":
+			debugsOn = true
+			fallthrough
+		default:
+			args = append(args, os.Args[i])
 		}
 	}
-	if debugsOn {
+	os.Args = args // reset to [potentially] trimmed down version
+
+	if debugsOn || os.Getenv("DEBUG") != "" { // Debugs on?
 		logrus.SetLevel(logrus.DebugLevel)
 	}
 
