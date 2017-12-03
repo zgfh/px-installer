@@ -98,10 +98,14 @@ func formatMounts(mounts []types.MountPoint) []string {
 		case mount.PropagationPrivate, mount.PropagationRPrivate:
 			// ignore
 		default:
-			out.WriteRune(sep)
-			out.WriteString(string(m.Propagation))
-			sep = ','
+			// NOTE: Docker 1.13.1 breaks their client API (see PWX-4278), so we have to handle "" as type.Propagation
+			if prop := strings.TrimSpace(string(m.Propagation)); prop != "" {
+				out.WriteRune(sep)
+				out.WriteString(prop)
+				sep = ','
+			}
 		}
+		// add "ro" if required
 		if !m.RW {
 			out.WriteRune(sep)
 			out.WriteString("ro")

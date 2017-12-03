@@ -204,6 +204,12 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	for _, vol := range cfg.Mounts {
 		// skip local mounts, pass the others
 		if _, has := ociPrivateMounts[vol]; has {
+			logrus.Debugf("Skipping mount %s", vol)
+			continue
+		} else if len(vol) < 4 || strings.HasPrefix(vol, "/var/run/docker.sock:") {
+			// Additional checks - skip anything under `len(a:/b)`, also under no circumstances
+			// should we pass docker.sock directly
+			logrus.Debugf("Also skipping mount %s", vol)
 			continue
 		}
 		args = append(args, "-v", vol)
