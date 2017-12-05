@@ -56,6 +56,7 @@ type Params struct {
 	IsRunC      bool   `schema:"-"      deprecated:"-"`
 	TmplVer     string `schema:"-"      deprecated:"-"`
 	Origin      string `schema:"-"      deprecated:"-"`
+	RbacAuthVer string `schema:"-"      deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
@@ -113,6 +114,23 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
 	p.MasterLess = (p.Master != "true")
 	p.TmplVer = templateVersion
+
+	// Fix up RbacAuthZ version.
+	// * [1.8 docs] https://kubernetes.io/docs/admin/authorization/rbac "As of 1.8, RBAC mode is stable and backed by the rbac.authorization.k8s.io/v1 API"
+	// * [1.7 docs] https://v1-7.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in beta"
+	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in beta"
+	p.KubeVer = strings.TrimSpace(p.KubeVer)
+	if len(p.KubeVer) > 1 && p.KubeVer[0] == 'v' { // cut out 'v' if left accidentally
+		p.KubeVer = p.KubeVer[1:]
+	}
+	if p.KubeVer == "" || strings.HasPrefix(p.KubeVer, "1.7.") {
+		// current Kubernetes default is v1.7.x
+		p.RbacAuthVer = "v1beta1"
+	} else if p.KubeVer < "1.7." {
+		p.RbacAuthVer = "v1alpha1"
+	} else {
+		p.RbacAuthVer = "v1"
+	}
 
 	// select PX-Image
 	if p.PxImage == "" {
