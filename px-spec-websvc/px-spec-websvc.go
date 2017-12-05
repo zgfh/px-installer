@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -28,6 +29,9 @@ var (
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
 )
+
+// kbVerRegex matches "1.7.9+coreos.0", "1.7.6+a08f5eeb62", "v1.7.6+a08f5eeb62", "1.7.6"
+var kbVerRegex = regexp.MustCompile(`.*(\d+\.\d+\.\d+).*`)
 
 // Params contains all parameters passed to us via HTTP.
 type Params struct {
@@ -115,14 +119,18 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.MasterLess = (p.Master != "true")
 	p.TmplVer = templateVersion
 
+	p.KubeVer = strings.TrimSpace(p.KubeVer)
+	if len(p.KubeVer) > 1 { // parse the actual k8s version stripping out unnecessary parts
+		matches := kbVerRegex.FindStringSubmatch(p.KubeVer)
+		if len(matches) > 1 {
+			p.KubeVer = matches[1]
+		}
+	}
+
 	// Fix up RbacAuthZ version.
 	// * [1.8 docs] https://kubernetes.io/docs/admin/authorization/rbac "As of 1.8, RBAC mode is stable and backed by the rbac.authorization.k8s.io/v1 API"
-	// * [1.7 docs] https://v1-7.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in beta"
-	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in beta"
-	p.KubeVer = strings.TrimSpace(p.KubeVer)
-	if len(p.KubeVer) > 1 && p.KubeVer[0] == 'v' { // cut out 'v' if left accidentally
-		p.KubeVer = p.KubeVer[1:]
-	}
+	// * [1.7 docs] https://v1-7.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.7 RBAC mode is in beta"
+	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in alpha"
 	if p.KubeVer == "" || strings.HasPrefix(p.KubeVer, "1.7.") {
 		// current Kubernetes default is v1.7.x
 		p.RbacAuthVer = "v1beta1"

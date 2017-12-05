@@ -1,4 +1,85 @@
 # SOURCE: {{.Origin}}
+
+{{if .Openshift}}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: portworx-pvc-controller-account
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
+metadata:
+   name: portworx-pvc-controller-role
+rules:
+- apiGroups: ["*"]
+  resources: ["*"]
+  verbs: ["*"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
+metadata:
+  name: portworx-pvc-controller-role-binding
+subjects:
+- kind: ServiceAccount
+  name: portworx-pvc-controller-account
+  namespace: kube-system
+{{- if lt .KubeVer "1.6.z"}}
+  apiVersion: v1
+{{- end}}
+roleRef:
+  kind: ClusterRole
+  name: portworx-pvc-controller-role
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  annotations:
+    scheduler.alpha.kubernetes.io/critical-pod: ""
+  labels:
+    tier: control-plane
+  name: portworx-pvc-controller
+  namespace: kube-system
+spec:
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      annotations:
+        scheduler.alpha.kubernetes.io/critical-pod: ""
+      labels:
+        name: portworx-pvc-controller
+        tier: control-plane
+    spec:
+      containers:
+      - command:
+        - kube-controller-manager
+        - --leader-elect=false
+        - --address=0.0.0.0
+        - --controllers=persistentvolume-binder
+        - --use-service-account-credentials=true
+        image: gcr.io/google_containers/kube-controller-manager-amd64:v{{- if .KubeVer}}{{.KubeVer}}{{- else}}1.7.8{{- end}}
+        livenessProbe:
+          failureThreshold: 8
+          httpGet:
+            host: 127.0.0.1
+            path: /healthz
+            port: 10252
+            scheme: HTTP
+          initialDelaySeconds: 15
+          timeoutSeconds: 15
+        name: portworx-pvc-controller-manager
+        resources:
+          requests:
+            cpu: 200m
+      hostNetwork: true
+      serviceAccountName: portworx-pvc-controller-account
+---
+{{end}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -128,7 +209,7 @@ spec:
             - name: dockersock
               mountPath: /var/run/docker.sock
             - name: kubelet
-              mountPath: /var/lib/kubelet:shared
+              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes:shared{{else}}/var/lib/kubelet:shared{{end}}
             - name: libosd
               mountPath: /var/lib/osd:shared
             - name: etcpwx
@@ -167,7 +248,7 @@ spec:
             path: /var/run/docker.sock
         - name: kubelet
           hostPath:
-            path: /var/lib/kubelet
+            path: {{if .Openshift}}/var/lib/origin/openshift.local.volumes{{else}}/var/lib/kubelet{{end}}
         - name: libosd
           hostPath:
             path: /var/lib/osd

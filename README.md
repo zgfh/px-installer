@@ -18,7 +18,7 @@ Make sure your environment has following environment variables set
 export DOCKER_HUB_INSTALL_REPO=portworx # or your private docker repo (if you change this, also update image in the .gtpl template)
 export DOCKER_HUB_MONITOR_IMAGE=monitor
 export DOCKER_HUB_WEBSVC_IMAGE=monitor-websvc
-export DOCKER_HUB_PXINIT_IMAGE=px-init
+export DOCKER_HUB_OCIMON_IMAGE=oci-monitor
 export PX_INSTALLER_DOCKER_HUB_TAG=1.0.0
 ```
 

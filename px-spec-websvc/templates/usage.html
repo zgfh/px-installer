@@ -152,6 +152,10 @@
         <td><code>coreos:</code> REQUIRED if target nodes are running coreos. (example: <var>true</var>)</td>
       </tr>
       <tr>
+        <td><input type="checkbox" NAME="osft" onClick="proc(this.form)"></td>
+        <td><code>osft:</code> REQUIRED if installing on Openshift. (example: <var>true</var>)</td>
+      </tr>
+      <tr>
         <td><input type="checkbox" NAME="mas" onClick="proc(this.form)"></td>
         <td><code>mas:</code> Specify if PX should run on the Kubernetes master node. For Kubernetes 1.6.4 and prior,
           this needs to be true (default is false) (example: <var>true</var>)</td>
