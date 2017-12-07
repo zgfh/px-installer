@@ -31,7 +31,7 @@ var (
 )
 
 // kbVerRegex matches "1.7.9+coreos.0", "1.7.6+a08f5eeb62", "v1.7.6+a08f5eeb62", "1.7.6"
-var kbVerRegex = regexp.MustCompile(`.*(\d+\.\d+\.\d+).*`)
+var kbVerRegex = regexp.MustCompile(`^[v\s]*(\d+\.\d+\.\d+)(.*)*`)
 
 // Params contains all parameters passed to us via HTTP.
 type Params struct {
@@ -124,6 +124,8 @@ func generate(templateFile string, p *Params) (string, error) {
 		matches := kbVerRegex.FindStringSubmatch(p.KubeVer)
 		if len(matches) > 1 {
 			p.KubeVer = matches[1]
+		} else {
+                	return "", fmt.Errorf("failed to parse kubernetes version from: %s. Please resubmit with a valid kubernetes version (e.g 1.7.8, 1.8.3)", p.KubeVer)
 		}
 	}
 
