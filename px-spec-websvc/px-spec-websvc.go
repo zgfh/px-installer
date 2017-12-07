@@ -17,6 +17,8 @@ import (
 )
 
 const (
+	vA1             = "v1alpha1"
+	vB1             = "v1beta1"
 	templateVersion = "v2"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix  = "portworx/px-enterprise"
@@ -28,39 +30,39 @@ var (
 	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
+	// kbVerRegex matches "1.7.9+coreos.0", "1.7.6+a08f5eeb62", "v1.7.6+a08f5eeb62", "1.7.6", "v1.6.11-gke.0"
+	kbVerRegex = regexp.MustCompile(`^[v\s]*(\d+\.\d+\.\d+)(.*)*`)
 )
-
-// kbVerRegex matches "1.7.9+coreos.0", "1.7.6+a08f5eeb62", "v1.7.6+a08f5eeb62", "1.7.6"
-var kbVerRegex = regexp.MustCompile(`^[v\s]*(\d+\.\d+\.\d+)(.*)*`)
 
 // Params contains all parameters passed to us via HTTP.
 type Params struct {
-	Type        string `schema:"type"   deprecated:"installType"`
-	Cluster     string `schema:"c"      deprecated:"cluster"`
-	Kvdb        string `schema:"k"      deprecated:"kvdb"`
-	Drives      string `schema:"s"      deprecated:"drives"`
-	DIface      string `schema:"d"      deprecated:"diface"`
-	MIface      string `schema:"m"      deprecated:"miface"`
-	KubeVer     string `schema:"kbver"  deprecated:"k8sVersion"`
-	Coreos      string `schema:"coreos" deprecated:"coreos"`
-	Master      string `schema:"mas"    deprecated:"master"`
-	ZeroStorage string `schema:"z"      deprecated:"zeroStorage"`
-	Force       string `schema:"f"      deprecated:"force"`
-	EtcdPasswd  string `schema:"pwd"    deprecated:"etcdPasswd"`
-	EtcdCa      string `schema:"ca"     deprecated:"etcdCa"`
-	EtcdCert    string `schema:"cert"   deprecated:"etcdCert"`
-	EtcdKey     string `schema:"key"    deprecated:"etcdKey"`
-	Acltoken    string `schema:"acl"    deprecated:"acltoken"`
-	Token       string `schema:"t"      deprecated:"token"`
-	Env         string `schema:"e"      deprecated:"env"`
-	Openshift   string `schema:"osft"   deprecated:"openshift"`
-	PxImage     string `schema:"px"     deprecated:"pximage"`
-	SecretType  string `schema:"st"     deprecated:"secretType"`
-	MasterLess  bool   `schema:"-"      deprecated:"-"`
-	IsRunC      bool   `schema:"-"      deprecated:"-"`
-	TmplVer     string `schema:"-"      deprecated:"-"`
-	Origin      string `schema:"-"      deprecated:"-"`
-	RbacAuthVer string `schema:"-"      deprecated:"-"`
+	Type           string `schema:"type"   deprecated:"installType"`
+	Cluster        string `schema:"c"      deprecated:"cluster"`
+	Kvdb           string `schema:"k"      deprecated:"kvdb"`
+	Drives         string `schema:"s"      deprecated:"drives"`
+	DIface         string `schema:"d"      deprecated:"diface"`
+	MIface         string `schema:"m"      deprecated:"miface"`
+	KubeVer        string `schema:"kbver"  deprecated:"k8sVersion"`
+	Coreos         string `schema:"coreos" deprecated:"coreos"`
+	Master         string `schema:"mas"    deprecated:"master"`
+	ZeroStorage    string `schema:"z"      deprecated:"zeroStorage"`
+	Force          string `schema:"f"      deprecated:"force"`
+	EtcdPasswd     string `schema:"pwd"    deprecated:"etcdPasswd"`
+	EtcdCa         string `schema:"ca"     deprecated:"etcdCa"`
+	EtcdCert       string `schema:"cert"   deprecated:"etcdCert"`
+	EtcdKey        string `schema:"key"    deprecated:"etcdKey"`
+	Acltoken       string `schema:"acl"    deprecated:"acltoken"`
+	Token          string `schema:"t"      deprecated:"token"`
+	Env            string `schema:"e"      deprecated:"env"`
+	Openshift      string `schema:"osft"   deprecated:"openshift"`
+	PxImage        string `schema:"px"     deprecated:"pximage"`
+	SecretType     string `schema:"st"     deprecated:"secretType"`
+	MasterLess     bool   `schema:"-"      deprecated:"-"`
+	IsRunC         bool   `schema:"-"      deprecated:"-"`
+	TmplVer        string `schema:"-"      deprecated:"-"`
+	Origin         string `schema:"-"      deprecated:"-"`
+	RbacAuthVer    string `schema:"-"      deprecated:"-"`
+	NeedController bool   `schema:"-"      deprecated:"-"`
 }
 
 func generate(templateFile string, p *Params) (string, error) {
@@ -118,14 +120,18 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
 	p.MasterLess = (p.Master != "true")
 	p.TmplVer = templateVersion
+	p.NeedController = (p.Openshift == "true")
+	isGKE := false
 
 	p.KubeVer = strings.TrimSpace(p.KubeVer)
 	if len(p.KubeVer) > 1 { // parse the actual k8s version stripping out unnecessary parts
 		matches := kbVerRegex.FindStringSubmatch(p.KubeVer)
 		if len(matches) > 1 {
 			p.KubeVer = matches[1]
+			isGKE = strings.HasPrefix(matches[2], "-gke.")
 		} else {
-                	return "", fmt.Errorf("failed to parse kubernetes version from: %s. Please resubmit with a valid kubernetes version (e.g 1.7.8, 1.8.3)", p.KubeVer)
+			return "", fmt.Errorf("Invalid Kubernetes version %q."+
+				"Please resubmit with a valid kubernetes version (e.g 1.7.8, 1.8.3)", p.KubeVer)
 		}
 	}
 
@@ -135,11 +141,19 @@ func generate(templateFile string, p *Params) (string, error) {
 	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in alpha"
 	if p.KubeVer == "" || strings.HasPrefix(p.KubeVer, "1.7.") {
 		// current Kubernetes default is v1.7.x
-		p.RbacAuthVer = "v1beta1"
+		p.RbacAuthVer = vB1
 	} else if p.KubeVer < "1.7." {
-		p.RbacAuthVer = "v1alpha1"
+		p.RbacAuthVer = vA1
 	} else {
 		p.RbacAuthVer = "v1"
+	}
+
+	// GKE (Google Container Engine) extensions - turn on the PVC-Controller, also override v1alphav1 AuthZ which doesn't work on GKE
+	if isGKE {
+		p.NeedController = true
+		if p.RbacAuthVer == vA1 {
+			p.RbacAuthVer = vB1
+		}
 	}
 
 	// select PX-Image

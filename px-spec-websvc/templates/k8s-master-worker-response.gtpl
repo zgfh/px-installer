@@ -1,6 +1,5 @@
 # SOURCE: {{.Origin}}
-
-{{if .Openshift}}
+{{- if .NeedController}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -79,7 +78,7 @@ spec:
       hostNetwork: true
       serviceAccountName: portworx-pvc-controller-account
 ---
-{{end}}
+{{- end}}{{/* <--------------------------------------- END .NeedController */}}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
