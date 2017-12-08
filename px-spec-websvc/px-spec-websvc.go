@@ -117,7 +117,7 @@ func generate(templateFile string, p *Params) (string, error) {
 		}
 	}
 
-	p.IsRunC = (p.Type == "runc" || p.Type == "oci")
+	p.IsRunC = !strings.HasPrefix(p.Type, "dock") // runC by default, unless dock*
 	p.MasterLess = (p.Master != "true")
 	p.TmplVer = templateVersion
 	p.NeedController = (p.Openshift == "true")
