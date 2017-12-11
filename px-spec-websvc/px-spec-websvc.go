@@ -23,7 +23,7 @@ const (
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix  = "portworx/px-enterprise"
 	ociImagePrefix = "portworx/oci-monitor"
-	defaultPXTAG   = "1.2.11.7"
+	defaultPXTAG   = "1.2.11.8"
 )
 
 var (
