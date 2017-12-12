@@ -681,8 +681,9 @@ func main() {
 	}
 
 	lastOp := "Install"
-	if lastPxDisabled = utils.IsPxDisabled(meNode); lastPxDisabled {
-		err = doUninstall()
+	if utils.IsPxDisabled(meNode) {
+		lastPxDisabled = false // force state change
+		err = k8s.Instance().WatchNode(meNode, watchNodeLabels)
 		lastOp = "Uninstall"
 	} else {
 		err = doInstall()

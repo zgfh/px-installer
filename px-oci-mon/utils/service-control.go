@@ -94,7 +94,7 @@ func (o *OciServiceControl) Enable() error {
 
 // Disable the service
 func (o *OciServiceControl) Disable() error {
-	return o.do(opDisable)
+	return o.do(opDisable, "No such file")
 }
 
 // Reload the service files
