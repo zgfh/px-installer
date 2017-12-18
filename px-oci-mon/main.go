@@ -31,7 +31,7 @@ const (
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix = "portworx/px-enterprise"
-	defaultPXTAG  = "1.2.11.8"
+	defaultPXTAG  = "1.2.11.9"
 )
 
 var (
@@ -505,7 +505,30 @@ func doUninstall() error {
 	}
 
 	logrus.Info("Removing Portworx service bind-mount (if any) and uninstall")
-	return ociService.Remove()
+	err := ociService.Remove()
+
+	// Uninstall additional services (portworx-reboot)
+	if err == nil {
+		addtlSvcName := "portworx-reboot"
+		addtlUnitFile := fmt.Sprintf(baseServiceFileFmt, addtlSvcName)
+		if isExist(addtlUnitFile) {
+			svc := utils.NewOciServiceControl(hostProcMount, addtlSvcName)
+			if err := svc.Stop(); err != nil {
+				logrus.WithError(err).Error("Could not stop ", addtlSvcName)
+			}
+			if err := svc.Disable(); err != nil {
+				logrus.WithError(err).Error("Could not disable ", addtlSvcName)
+			}
+			if err := svc.RunExternal(nil, "/bin/rm", "-f", addtlUnitFile); err != nil {
+				logrus.WithError(err).Error("Could not remove ", addtlUnitFile)
+			}
+		} else {
+			logrus.Debugf("%s.service does not exist - skipping removal", addtlSvcName)
+		}
+	}
+
+	// returning error from OCI-service removal
+	return err
 }
 
 // getKubernetesRootDir scans the external kubelet service for "--root-dir=XX" override, or returns a default kubelet dir
