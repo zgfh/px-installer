@@ -425,6 +425,17 @@ func finalizePxOciInstall(installed bool) error {
 		}
 	}
 
+	// Additional services we'd need to enable: portworx-reboot
+	addtlSvcName := "portworx-reboot"
+	if isExist(fmt.Sprintf(baseServiceFileFmt, addtlSvcName)) {
+		svc := utils.NewOciServiceControl(hostProcMount, addtlSvcName)
+		if err := svc.Enable(); err != nil {
+			logrus.WithError(err).Error("Could not enable ", addtlSvcName)
+		}
+	} else {
+		logrus.Debugf("%s.service does not exist - skipping enablement", addtlSvcName)
+	}
+
 	return ociService.Restart()
 }
 
