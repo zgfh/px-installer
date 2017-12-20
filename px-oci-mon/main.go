@@ -54,6 +54,15 @@ var (
 	PXTAG string
 )
 
+type schedulerType int
+
+const (
+	// Kubernetes scheduler type
+	Kubernetes schedulerType = iota
+	// Swarm scheduler type
+	Swarm
+)
+
 // usage borrowed from ../../porx/cmd/px-runc/px-runc.go -- TODO: Consider refactoring !!
 func usage(args ...interface{}) {
 	if len(args) > 0 {
@@ -664,13 +673,24 @@ func setLogfile(fname string) error {
 
 func main() {
 	args := make([]string, 0, len(os.Args))
+	scheduler := Kubernetes // assume Kubernetes scheduler
 	for i := 0; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "--log":
-			i++
-			if err := setLogfile(os.Args[i]); err != nil {
-				logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
-				os.Exit(1)
+			if i++; i <= len(os.Args) {
+				if err := setLogfile(os.Args[i]); err != nil {
+					logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
+					os.Exit(1)
+				}
+			}
+		case "-x":
+			args = append(args, os.Args[i])
+			if i++; i <= len(os.Args) {
+				args = append(args, os.Args[i])
+				if os.Args[i] == "swarm" {
+					logrus.Info("Initializing as Swarm scheduler")
+					scheduler = Swarm
+				}
 			}
 		case "--debug":
 			debugsOn = true
@@ -708,31 +728,40 @@ func main() {
 	logrus.Info("Activating REST server")
 	ociRestServer.Start()
 
-	meNode, err := utils.FindMyNode()
-	if err != nil || meNode == nil {
-		logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
-		os.Exit(1)
-	}
-
 	lastOp := "Install"
-	if utils.IsPxDisabled(meNode) {
-		lastPxDisabled = false // force state change
-		err = k8s.Instance().WatchNode(meNode, watchNodeLabels)
-		lastOp = "Uninstall"
+	if scheduler == Kubernetes {
+		meNode, err := utils.FindMyNode()
+		if err != nil || meNode == nil {
+			logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
+			os.Exit(1)
+		}
+
+		if utils.IsPxDisabled(meNode) {
+			lastPxDisabled = false // force state change
+			err = k8s.Instance().WatchNode(meNode, watchNodeLabels)
+			lastOp = "Uninstall"
+		} else {
+			err = doInstall()
+		}
+		if err != nil {
+			// note: CRITICAL FAILURE if install | uninstall failed
+			logrus.Error(err)
+			os.Exit(-1)
+		}
+		logrus.Info("Activating node-watcher")
+		k8s.Instance().WatchNode(meNode, watchNodeLabels)
 	} else {
-		err = doInstall()
-	}
-	if err != nil {
-		// note: CRITICAL FAILURE if install | uninstall failed
-		logrus.Error(err)
-		os.Exit(-1)
+
+		// non-Kubernetes scheduler, just install
+		if err := doInstall(); err != nil {
+			// note: CRITICAL FAILURE if install failed
+			logrus.Error(err)
+			os.Exit(-1)
+		}
 	}
 	ociRestServer.SetStateInstallFinished()
 
-	logrus.Info("Activating node-watcher")
-	k8s.Instance().WatchNode(meNode, watchNodeLabels)
-
-	// NOTE: exiting the main() goroutine, the daemonSet is still maintained "alive" via Watcher
+	// NOTE: exiting the main() goroutine, the daemonSet is still maintained "alive" via Watcher and/or REST svc
 	logrus.Info(lastOp, " done - MAIN exiting")
 	runtime.Goexit()
 	// normally unreachable
