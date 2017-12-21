@@ -193,7 +193,7 @@ func (di *DockerInstaller) ExtractConfig(id string) (*SimpleContainerConfig, err
 	copy(scc.Args, cconf.Args)
 
 	// Copy mounts
-	scc.Mounts = formatMounts(cconf.Mounts)
+	scc.Mounts = formatMounts(cconf)
 
 	// Copy ENV
 	scc.Env = make([]string, len(cconf.Config.Env))

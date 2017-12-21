@@ -12,6 +12,15 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/mount"
+	"github.com/sirupsen/logrus"
+)
+
+const cgroupFileName = "/proc/self/cgroup"
+
+var (
+	// ErrContainerNotFound returned when no container can be found
+	ErrContainerNotFound = errors.New("container not found")
+	containerIDre        = regexp.MustCompilePOSIX(`[0-9]+:name=.*[/-]([0-9a-f]{64})`)
 )
 
 // SimpleContainerConfig is a simplified container configuration, which includes arguments,
@@ -53,14 +62,6 @@ func ExtractEnvFromOciConfig(fname, envVar string) (string, error) {
 	return found, nil
 }
 
-const cgroupFileName = "/proc/self/cgroup"
-
-var (
-	// ErrContainerNotFound returned when no container can be found
-	ErrContainerNotFound = errors.New("container not found")
-	containerIDre        = regexp.MustCompilePOSIX(`[0-9]+:name=.*[/-]([0-9a-f]{64})`)
-)
-
 // GetMyContainerID extracts the Container ID from its cgroups entry.
 func GetMyContainerID() (string, error) {
 	f, err := os.Open(cgroupFileName)
@@ -83,8 +84,10 @@ func GetMyContainerID() (string, error) {
 
 // formatMounts is a helper-function which converts `types.MountPoint` structs into the Docker-CLI representation
 // (ie. `source:dest[:shared,ro]`)
-func formatMounts(mounts []types.MountPoint) []string {
-	outList := make([]string, 0, 1)
+func formatMounts(cconf types.ContainerJSON) []string {
+	mounts := cconf.Mounts
+	outList := make([]string, 0, 5)
+	lookupCache := make(map[string]string)
 
 	for _, m := range mounts {
 		var out bytes.Buffer
@@ -110,7 +113,44 @@ func formatMounts(mounts []types.MountPoint) []string {
 			out.WriteRune(sep)
 			out.WriteString("ro")
 		}
-		outList = append(outList, out.String())
+
+		// consult lookupCache for dupe/replace warnings
+		newMount := out.String()
+		if oldMount, has := lookupCache[m.Destination]; has {
+			if oldMount == newMount {
+				logrus.Warn("Duplicate mount-entry for '%s'", newMount)
+			} else {
+				logrus.Warn("Overriding mount-entry for '%s' - from %s to %s",
+					m.Destination, oldMount, newMount)
+			}
+		}
+		lookupCache[m.Destination] = newMount
+		outList = append(outList, newMount)
 	}
+
+	// process extras: consult lookupCache for resolv.conf / hosts mounts - add if empty
+	var extras = []struct {
+		confSource  string
+		destination string
+		label       string
+	}{
+		{cconf.HostsPath, "/etc/hosts", "HostsPath"},
+		{cconf.ResolvConfPath, "/etc/resolv.conf", "ResolvConfPath"},
+	}
+	for _, ex := range extras {
+		if ex.confSource != "" {
+			if old, has := lookupCache[ex.destination]; has {
+				if !strings.HasPrefix(old, ex.confSource+":"+ex.destination) {
+					// issue warning if already have a _different_ mount for the same dest (unlikely to happen)
+					logrus.Warnf("Mount rule '%s' overrides %s='%s'", old, ex.label, ex.confSource)
+				}
+			} else {
+				// no override via mounts, just add it as extra
+				val := fmt.Sprintf("%s:%s:ro", ex.confSource, ex.destination)
+				outList = append(outList, val)
+			}
+		}
+	}
+
 	return outList
 }
