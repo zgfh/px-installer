@@ -41,6 +41,7 @@ metadata:
   name: portworx-pvc-controller
   namespace: kube-system
 spec:
+  replicas: 3
   strategy:
     rollingUpdate:
       maxSurge: 1
@@ -57,10 +58,11 @@ spec:
       containers:
       - command:
         - kube-controller-manager
-        - --leader-elect=false
+        - --leader-elect=true
         - --address=0.0.0.0
         - --controllers=persistentvolume-binder
         - --use-service-account-credentials=true
+        - --leader-elect-resource-lock=configmaps
         image: gcr.io/google_containers/kube-controller-manager-amd64:v{{- if .KubeVer}}{{.KubeVer}}{{- else}}1.7.8{{- end}}
         livenessProbe:
           failureThreshold: 8
@@ -76,6 +78,16 @@ spec:
           requests:
             cpu: 200m
       hostNetwork: true
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: "name"
+                    operator: In
+                    values:
+                    - portworx-pvc-controller
+              topologyKey: "kubernetes.io/hostname"
       serviceAccountName: portworx-pvc-controller-account
 ---
 {{- end}}{{/* <--------------------------------------- END .NeedController */}}
