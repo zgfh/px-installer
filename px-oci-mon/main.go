@@ -49,6 +49,7 @@ var (
 		"/proc/1/ns:/host_proc/1/ns":                true,
 		"/var/run/docker.sock:/var/run/docker.sock": true,
 	}
+	kubernetesArgs = []string{"-x", "kubernetes"}
 	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
@@ -663,14 +664,35 @@ func setLogfile(fname string) error {
 }
 
 func main() {
+	logrus.Infof("Input arguments: %q", os.Args)
 	args := make([]string, 0, len(os.Args))
+	var scheduler *string
 	for i := 0; i < len(os.Args); i++ {
 		switch os.Args[i] {
+		case "":
+			logrus.Infof("NOTE -- skippng empty arg #%d", i)
+			i++ // skip empty args
 		case "--log":
 			i++
 			if err := setLogfile(os.Args[i]); err != nil {
 				logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
 				os.Exit(1)
+			}
+		case "-x":
+			i1 := i + 1
+			if i1 >= len(os.Args) {
+				logrus.Error("ERROR: Argument '-x' specified, but no scheduler provided." +
+					"  Please correct your configuration.")
+				os.Exit(1)
+			}
+			if os.Args[i1] != "kubernetes" {
+				logrus.Errorf("Invalid option '-x %s' provided."+
+					"  Please correct your configuration.", os.Args[i1])
+				os.Exit(1)
+			} else {
+				args = append(args, kubernetesArgs...)
+				scheduler = &os.Args[i1]
+				i += 2
 			}
 		case "--debug":
 			debugsOn = true
@@ -679,6 +701,11 @@ func main() {
 			args = append(args, os.Args[i])
 		}
 	}
+	if scheduler == nil {
+		logrus.Warnf("Scheduler not specified - adding `-x kubernetes` to the parameters")
+		args = append(args, kubernetesArgs...)
+	}
+	logrus.Infof("Updated arguments: %q", args)
 	os.Args = args // reset to [potentially] trimmed down version
 
 	if debugsOn || os.Getenv("DEBUG") != "" { // Debugs on?
