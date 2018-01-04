@@ -232,7 +232,7 @@ spec:
             - name: optpwx
               mountPath: /opt/pwx
             - name: proc1nsmount
-              mountPath: /host_proc/1/ns
+              mountPath: {{if .Openshift}}/host_proc{{else}}/host_proc/1/ns{{end}}
             - name: sysdmount
               mountPath: /etc/systemd/system
             {{- else}}
@@ -275,7 +275,7 @@ spec:
             path: /opt/pwx
         - name: proc1nsmount
           hostPath:
-            path: /proc/1/ns
+            path: {{if .Openshift}}/proc{{else}}/proc/1/ns{{end}}
         - name: sysdmount
           hostPath:
             path: /etc/systemd/system

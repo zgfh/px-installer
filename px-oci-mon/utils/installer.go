@@ -124,6 +124,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	hostConf := container.HostConfig{
 		Binds:      binds,
 		AutoRemove: false,
+		Privileged: true,
 	}
 
 	logrus.Infof("Removing old container %s (if any)", cntr)

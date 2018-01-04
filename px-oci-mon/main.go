@@ -31,7 +31,7 @@ const (
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix = "portworx/px-enterprise"
-	defaultPXTAG  = "1.2.11.10"
+	defaultPXTAG  = "1.2.12.0"
 )
 
 var (
@@ -50,6 +50,7 @@ var (
 		"/var/run/docker.sock:/var/run/docker.sock": true,
 	}
 	kubernetesArgs = []string{"-x", "kubernetes"}
+	optPreSync     = false
 	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
@@ -407,6 +408,11 @@ func switchOciInstall() error {
 func finalizePxOciInstall(installed bool) error {
 	initialInstall := !isExist(fmt.Sprintf(baseServiceFileFmt, baseServiceName))
 
+	if optPreSync {
+		logrus.Info("Running sync() before PX-OCI install/upgrade")
+		syscall.Sync()
+	}
+
 	if installed {
 		if err := switchOciInstall(); err != nil {
 			return err
@@ -672,6 +678,8 @@ func main() {
 		case "":
 			logrus.Infof("NOTE -- skippng empty arg #%d", i)
 			i++ // skip empty args
+		case "--sync":
+			optPreSync = true // local option
 		case "--log":
 			i++
 			if err := setLogfile(os.Args[i]); err != nil {
