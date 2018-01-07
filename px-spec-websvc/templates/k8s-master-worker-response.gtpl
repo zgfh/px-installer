@@ -208,8 +208,13 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
+              {{if .Openshift}}
+              - key: openshift-infra
+                operator: Exists
+              {{else}}
               - key: node-role.kubernetes.io/master
                 operator: Exists
+              {{- end}}
               - key: px/enabled
                 operator: NotIn
                 values:
@@ -361,8 +366,13 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
+              {{if .Openshift}}
+              - key: openshift-infra
+                operator: DoesNotExist
+              {{else}}
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
+              {{- end}}
               - key: px/enabled
                 operator: NotIn
                 values:
