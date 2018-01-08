@@ -207,8 +207,13 @@ spec:
                 values:
                 - "false"
               {{- if .MasterLess}}
+              {{- if .Openshift}}
+              - key: openshift-infra
+                operator: DoesNotExist
+              {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
+              {{- end}}
               {{- end}}
       hostNetwork: true
       hostPID: true
