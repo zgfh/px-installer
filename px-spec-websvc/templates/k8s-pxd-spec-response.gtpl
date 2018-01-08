@@ -207,10 +207,10 @@ spec:
                 values:
                 - "false"
               {{- if .MasterLess}}
-              {{if .Openshift}}
+              {{- if .Openshift}}
               - key: openshift-infra
                 operator: DoesNotExist
-              {{else}}
+              {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
               {{- end}}

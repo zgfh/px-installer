@@ -208,10 +208,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              {{if .Openshift}}
+              {{- if .Openshift}}
               - key: openshift-infra
                 operator: Exists
-              {{else}}
+              {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: Exists
               {{- end}}
@@ -366,10 +366,10 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
             - matchExpressions:
-              {{if .Openshift}}
+              {{- if .Openshift}}
               - key: openshift-infra
                 operator: DoesNotExist
-              {{else}}
+              {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
               {{- end}}
