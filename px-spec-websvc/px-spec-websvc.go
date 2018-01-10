@@ -20,6 +20,7 @@ const (
 	vA1             = "v1alpha1"
 	vB1             = "v1beta1"
 	templateVersion = "v2"
+	httpProtocolHdr = "X-Forwarded-Proto"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix  = "portworx/px-enterprise"
 	ociImagePrefix = "portworx/oci-monitor"
@@ -285,7 +286,11 @@ func main() {
 		// Populate origin, so we can leave it as comment in templates
 		p.Origin = "unknown"
 		if r.Host != "" && r.URL != nil {
-			p.Origin = fmt.Sprintf("http://%s%s", r.Host, r.URL)
+			proto := r.Header.Get(httpProtocolHdr)
+			if proto == "" {
+				proto = "http"
+			}
+			p.Origin = fmt.Sprintf("%s://%s%s", proto, r.Host, r.URL)
 		}
 		log.Printf("Client %q - REQ %s from Referer %q", r.RemoteAddr, p.Origin, r.Referer())
 		p.Origin = strings.Replace(p.Origin, "%", "%%", -1)
