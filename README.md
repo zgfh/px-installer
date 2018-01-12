@@ -26,7 +26,7 @@ Common build targets:
 make px-oci-mon/px-oci-mon px-oci-mon-container
 
 # Build Web service container
-make px-spec-websvc/px-spec-websvc px-oci-mon-container
+make px-spec-websvc/px-spec-websvc px-spec-websvc-container
 
 # .. or, Build all
 make all px-container
