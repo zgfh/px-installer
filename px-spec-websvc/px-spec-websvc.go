@@ -65,6 +65,7 @@ type Params struct {
 	Origin         string `schema:"-"      deprecated:"-"`
 	RbacAuthVer    string `schema:"-"      deprecated:"-"`
 	NeedController bool   `schema:"-"      deprecated:"-"`
+	StartStork     bool   `schema:"stork"  deprecated:"stork"`
 }
 
 func splitCsv(in string) ([]string, error) {
