@@ -56,6 +56,7 @@ type Params struct {
 	Token          string `schema:"t"      deprecated:"token"`
 	Env            string `schema:"e"      deprecated:"env"`
 	Openshift      string `schema:"osft"   deprecated:"openshift"`
+	Csi            string `schema:"csi"    deprecated:"csi"`
 	PxImage        string `schema:"px"     deprecated:"pximage"`
 	SecretType     string `schema:"st"     deprecated:"secretType"`
 	MasterLess     bool   `schema:"-"      deprecated:"-"`
@@ -123,6 +124,10 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.TmplVer = templateVersion
 	p.NeedController = (p.Openshift == "true")
 	isGKE := false
+
+	if strings.ToLower(p.Csi) != "true" {
+		p.Csi = ""
+	}
 
 	p.KubeVer = strings.TrimSpace(p.KubeVer)
 	if len(p.KubeVer) > 1 { // parse the actual k8s version stripping out unnecessary parts

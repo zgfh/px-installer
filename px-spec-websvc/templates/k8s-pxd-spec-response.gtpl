@@ -147,6 +147,11 @@ rules:
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
   verbs: ["get", "list"]
+{{- if .Csi}}
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments"]
+  verbs: ["get", "list", "watch", "update"]
+{{- end}}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
@@ -239,6 +244,10 @@ spec:
           env:
             - name: "PX_TEMPLATE_VERSION"
               value: "{{.TmplVer}}"
+            {{- if .Csi}}
+            - name: CSI_ENDPOINT
+              value: unix:///var/lib/kubelet/plugins/com.openstorage.pxd/csi.sock
+            {{- end}}
             {{if .Env}}{{.Env}}{{end}}
           livenessProbe:
             periodSeconds: 30
@@ -264,9 +273,15 @@ spec:
             - name: dockersock
               mountPath: /var/run/docker.sock
             - name: kubelet
-              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes:shared{{else}}/var/lib/kubelet:shared{{end}}
+              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes{{if not .Csi}}:shared{{end}}{{else}}/var/lib/kubelet{{if not .Csi}}:shared{{end}}{{end}}
+              {{- if .Csi}}
+              mountPropagation: "Bidirectional"
+              {{- end}}
             - name: libosd
-              mountPath: /var/lib/osd:shared
+              mountPath: /var/lib/osd{{if not .Csi}}:shared{{end}}
+              {{- if .Csi}}
+              mountPropagation: "Bidirectional"
+              {{- end}}
             - name: etcpwx
               mountPath: /etc/pwx
             {{- if .IsRunC}}
@@ -290,6 +305,24 @@ spec:
             - name: hostproc
               mountPath: /hostproc
             {{- end}}
+        {{- if .Csi}}
+        - name: csi-driver-registrar
+          imagePullPolicy: Always
+          image: docker.io/k8scsi/driver-registrar
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /csi/plugins/com.openstorage.pxd/csi.sock
+            - name: KUBE_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          volumeMounts:
+            - name: kubelet
+              mountPath: /csi
+        {{- end}}
       restartPolicy: Always
       {{- if not .MasterLess}}
       tolerations:
@@ -340,3 +373,99 @@ spec:
           hostPath:
             path: /proc
         {{- end}}
+{{- if .Csi}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: px-csi-account
+  namespace: kube-system
+---
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
+metadata:
+   name: px-csi-role
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch", "create", "delete", "update"]
+- apiGroups: [""]
+  resources: ["persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "update"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["storageclasses"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["storage.k8s.io"]
+  resources: ["volumeattachments"]
+  verbs: ["get", "list", "watch", "update"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
+metadata:
+  name: px-csi-role-binding
+subjects:
+- kind: ServiceAccount
+  name: px-csi-account
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: px-csi-role
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: px-csi-service
+  namespace: kube-system
+spec:
+  clusterIP: None
+---
+kind: StatefulSet
+apiVersion: apps/v1beta1
+metadata:
+  name: px-csi-ext
+  namespace: kube-system
+spec:
+  serviceName: "px-csi-service"
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: px-csi-driver
+    spec:
+      serviceAccount: px-csi-account
+      containers:
+        - name: csi-external-provisioner
+          imagePullPolicy: Always
+          image: docker.io/k8scsi/csi-provisioner:0.1
+          args:
+            - "--v=5"
+            - "--provisioner=com.openstorage.pxd"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+        - name: csi-attacher
+          imagePullPolicy: Always
+          image: docker.io/k8scsi/csi-attacher:0.1
+          args:
+            - "--v=5"
+            - "--csi-address=$(ADDRESS)"
+          env:
+            - name: ADDRESS
+              value: /csi/csi.sock
+          volumeMounts:
+            - name: socket-dir
+              mountPath: /csi
+      volumes:
+        - name: socket-dir
+          hostPath:
+            path: /var/lib/kubelet/plugins/com.openstorage.pxd
+            type: DirectoryOrCreate
+{{- end}}
