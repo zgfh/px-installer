@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/csv"
 	"fmt"
 	"io"
 	"log"
@@ -66,6 +67,18 @@ type Params struct {
 	NeedController bool   `schema:"-"      deprecated:"-"`
 }
 
+func splitCsv(in string) ([]string, error) {
+	r := csv.NewReader(strings.NewReader(in))
+	r.TrimLeadingSpace = true
+	records, err := r.ReadAll()
+	if err != nil || len(records) < 1 {
+		return []string{}, err
+	} else if len(records) > 1 {
+		return []string{}, fmt.Errorf("Multiline CSV not supported")
+	}
+	return records[0], err
+}
+
 func generate(templateFile string, p *Params) (string, error) {
 
 	cwd, _ := os.Getwd()
@@ -76,15 +89,21 @@ func generate(templateFile string, p *Params) (string, error) {
 
 	// Fix drives entry
 	if len(p.Drives) != 0 {
+		devList, err := splitCsv(p.Drives)
+		if err != nil {
+			return "", err
+		}
+
 		var b bytes.Buffer
 		sep := ""
-		for _, dev := range strings.Split(p.Drives, ",") {
-			dev = strings.Trim(dev, " ")
-			b.WriteString(sep)
-			b.WriteString(`"-s", "`)
-			b.WriteString(dev)
-			b.WriteByte('"')
-			sep = ", "
+		for _, dev := range devList {
+			if dev = strings.Trim(dev, ` "`); dev != "" {
+				b.WriteString(sep)
+				b.WriteString(`"-s", "`)
+				b.WriteString(dev)
+				b.WriteByte('"')
+				sep = ", "
+			}
 		}
 		p.Drives = b.String()
 	} else {
@@ -97,25 +116,27 @@ func generate(templateFile string, p *Params) (string, error) {
 
 	// Pre-format Environment entry
 	if len(p.Env) != 0 {
-		if len(p.Env) != 0 {
-			var b bytes.Buffer
-			prefix := ""
-			for _, e := range strings.Split(p.Env, ",") {
-				e = strings.Trim(e, " ")
-				entry := strings.SplitN(e, "=", 2)
-				if len(entry) == 2 {
-					b.WriteString(prefix)
-					prefix = "            "
-					b.WriteString(`- name: "`)
-					b.WriteString(entry[0])
-					b.WriteString("\"\n")
-					b.WriteString(`              value: "`)
-					b.WriteString(entry[1])
-					b.WriteString("\"\n")
-				}
-			}
-			p.Env = b.String()
+		envList, err := splitCsv(p.Env)
+		if err != nil {
+			return "", err
 		}
+
+		var b bytes.Buffer
+		prefix := ""
+		for _, e := range envList {
+			entry := strings.SplitN(e, "=", 2)
+			if len(entry) == 2 {
+				b.WriteString(prefix)
+				prefix = "            "
+				b.WriteString(`- name: "`)
+				b.WriteString(strings.Trim(entry[0], ` "`))
+				b.WriteString("\"\n")
+				b.WriteString(`              value: "`)
+				b.WriteString(strings.Trim(entry[1], ` "`))
+				b.WriteString("\"\n")
+			}
+		}
+		p.Env = b.String()
 	}
 
 	p.IsRunC = !strings.HasPrefix(p.Type, "dock") // runC by default, unless dock*

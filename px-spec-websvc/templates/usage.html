@@ -116,7 +116,8 @@
         <td>
           <INPUT TYPE="text" NAME="k" VALUE="etcd:http://etc.fake.net:2379" onChange="proc(this.form)">
         </td>
-        <td><code>k:</code> Points to your key value database, such as an etcd cluster or a consul cluster. (example: <var>etcd:http(s)://etcd.fake.net:2379</var>)</td>
+        <td><code>k:</code> Points to your key value database, such as an etcd cluster or a consul cluster.
+          (example: <var>etcd:http(s)://etcd.fake.net:2379</var>)</td>
       </tr>
       <tr>
         <td COLSPAN="2" ALIGN="center"><small>OPTIONAL PARAMETERS</small></td>
@@ -125,7 +126,8 @@
         <td>
           <INPUT TYPE="text" NAME="s" VALUE="" onChange="proc(this.form)">
         </td>
-        <td><code>s:</code> Specify comma-separated list of drives. (example: <var>/dev/sdb,/dev/sdc</var>)</td>
+        <td><code>s:</code> Specify comma-separated list of drives. (example: <var>/dev/sdb,/dev/sdc</var>,
+          or <var>"type=gb2,size=100"</var>)</td>
       </tr>
       <tr>
         <td>
@@ -237,8 +239,8 @@
         s += sep + el.name + "="
         if (el.name == "e" || el.name == "env") {
           s += encodeURIComponent(el.value)
-        } else if (el.name == 's' || el.name == 'k') {
-          s += el.value.replace(/,/g, '%2C')
+        } else if (el.name == 'k' || el.name == "s") {
+          s += el.value.replace(/,/g, '%2C').replace(/=/g, '%3D').replace(/"/g, '%22')
         } else {
           s += el.value
         }
