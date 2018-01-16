@@ -272,16 +272,19 @@ spec:
           volumeMounts:
             - name: dockersock
               mountPath: /var/run/docker.sock
+            {{- if .Csi}}
             - name: kubelet
-              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes{{if not .Csi}}:shared{{end}}{{else}}/var/lib/kubelet{{if not .Csi}}:shared{{end}}{{end}}
-              {{- if .Csi}}
+              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes{{else}}/var/lib/kubelet{{end}}
               mountPropagation: "Bidirectional"
-              {{- end}}
             - name: libosd
-              mountPath: /var/lib/osd{{if not .Csi}}:shared{{end}}
-              {{- if .Csi}}
+              mountPath: /var/lib/osd
               mountPropagation: "Bidirectional"
-              {{- end}}
+            {{- else}}
+            - name: kubelet
+              mountPath: {{if .Openshift}}/var/lib/origin/openshift.local.volumes:shared{{else}}/var/lib/kubelet:shared{{end}}
+            - name: libosd
+              mountPath: /var/lib/osd:shared
+            {{- end}}
             - name: etcpwx
               mountPath: /etc/pwx
             {{- if .IsRunC}}
@@ -373,7 +376,7 @@ spec:
           hostPath:
             path: /proc
         {{- end}}
-{{- if .Csi}}
+{{- if .Csi}}{{/* <--------------------------------------- BEGIN .Csi */}}
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -468,4 +471,4 @@ spec:
           hostPath:
             path: /var/lib/kubelet/plugins/com.openstorage.pxd
             type: DirectoryOrCreate
-{{- end}}
+{{- end}}{{/* <--------------------------------------- END .Csi */}}
