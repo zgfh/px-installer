@@ -137,5 +137,4 @@ func (o *OciServiceControl) HandleRequest(op string) error {
 	default:
 		return fmt.Errorf("Unsupported service request: %s", op)
 	}
-	return nil
 }
