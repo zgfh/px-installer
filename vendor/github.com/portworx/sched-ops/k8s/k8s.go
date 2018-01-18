@@ -29,12 +29,13 @@ import (
 )
 
 const (
-	masterLabelKey          = "node-role.kubernetes.io/master"
-	hostnameKey             = "kubernetes.io/hostname"
-	pvcStorageClassKey      = "volume.beta.kubernetes.io/storage-class"
-	labelUpdateMaxRetries   = 5
-	nodeUpdateTimeout       = 1 * time.Minute
-	nodeUpdateRetryInterval = 2 * time.Second
+	masterLabelKey           = "node-role.kubernetes.io/master"
+	hostnameKey              = "kubernetes.io/hostname"
+	pvcStorageClassKey       = "volume.beta.kubernetes.io/storage-class"
+	pvcStorageProvisionerKey = "volume.beta.kubernetes.io/storage-provisioner"
+	labelUpdateMaxRetries    = 5
+	nodeUpdateTimeout        = 1 * time.Minute
+	nodeUpdateRetryInterval  = 2 * time.Second
 )
 
 var (
@@ -54,6 +55,7 @@ type Ops interface {
 	StorageClassOps
 	PersistentVolumeClaimOps
 	SnapshotOps
+	SecretOps
 }
 
 // NamespaceOps is an interface to perform namespace operations
@@ -205,6 +207,11 @@ type SnapshotOps interface {
 	GetVolumeForSnapshot(name string, namespace string) (string, error)
 	// GetSnapshotStatus returns the status of the given snapshot
 	GetSnapshotStatus(name string, namespace string) (*snap_v1.VolumeSnapshotStatus, error)
+}
+
+type SecretOps interface {
+	// GetSecret gets the secrets object given its name and namespace
+	GetSecret(name string, namespace string) (*v1.Secret, error)
 }
 
 var (
@@ -1094,9 +1101,9 @@ func (k *k8sOps) GetPodsUsingVolumePluginByNodeName(nodeName, plugin string) ([]
 			if v.PersistentVolumeClaim != nil {
 				pvc, err := k.GetPersistentVolumeClaim(v.PersistentVolumeClaim.ClaimName, p.Namespace)
 				if err == nil && pvc != nil {
-					sc, err := k.getStorageClassForPVC(pvc)
-					if err == nil && sc != nil {
-						if sc.Provisioner == plugin {
+					provisioner, err := k.getStorageProvisionerForPVC(pvc)
+					if err == nil {
+						if provisioner == plugin {
 							retList = append(retList, p)
 						}
 					}
@@ -1430,6 +1437,18 @@ func (k *k8sOps) GetSnapshotStatus(name string, namespace string) (*snap_v1.Volu
 
 // Snapshot APIs - END
 
+// Secret APIs - BEGIN
+
+func (k *k8sOps) GetSecret(name string, namespace string) (*v1.Secret, error) {
+	if err := k.initK8sClient(); err != nil {
+		return nil, err
+	}
+
+	return k.client.CoreV1().Secrets(namespace).Get(name, meta_v1.GetOptions{})
+}
+
+// Secret APIs - END
+
 func (k *k8sOps) appsClient() v1beta2.AppsV1beta2Interface {
 	return k.client.AppsV1beta2()
 }
@@ -1533,23 +1552,12 @@ func getLocalIPList(includeHostname bool) ([]string, error) {
 	return ipList, nil
 }
 
-// getStorageClassForPVC returns storage class for given PVC if it exists
-func (k *k8sOps) getStorageClassForPVC(pvc *v1.PersistentVolumeClaim) (*storage_api.StorageClass, error) {
-	var scName string
-	if pvc.Spec.StorageClassName != nil {
-		scName = *pvc.Spec.StorageClassName
-	} else {
-		scName, _ = pvc.ObjectMeta.Annotations[pvcStorageClassKey]
+// getStorageProvisionerForPVC returns storage provisioner for given PVC if it exists
+func (k *k8sOps) getStorageProvisionerForPVC(pvc *v1.PersistentVolumeClaim) (string, error) {
+	provisionerName, ok := pvc.ObjectMeta.Annotations[pvcStorageProvisionerKey]
+	if !ok || len(provisionerName) == 0 {
+		return "", fmt.Errorf("pvc %s does not have a storage provisioner", pvc.Name)
 	}
 
-	if len(scName) == 0 {
-		return nil, fmt.Errorf("pvc %s does not have a storage class", pvc.Name)
-	}
-
-	sc, err := k.ValidateStorageClass(scName)
-	if err != nil {
-		return nil, err
-	}
-
-	return sc, nil
+	return provisionerName, nil
 }
