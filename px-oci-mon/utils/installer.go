@@ -19,7 +19,6 @@ const clientAPIDefaultVersion = "1.23"
 
 var (
 	dockerDownloadMsg = []byte(`"Pulling fs layer"`)
-	pxNeedsReboot = []byte("WARNING: May require reboot to complete the Portworx upgrade")
 )
 
 // DockerInstaller is a Docker client specialized for Container installation
@@ -159,8 +158,12 @@ func dockerLogReader(dockLog io.ReadCloser, writers ...io.Writer) error {
 	}
 }
 
+// LogProcessCb is a callback function that processes logs form RunOnce container.
+// Input arguments is byte-array of container's output, and error status if log-collection was success
+type LogProcessCb func([]byte, error)
+
 // RunOnce will create container, run it, wait until it's finished, and finally remove it.
-func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string) error {
+func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []string, lproc LogProcessCb) error {
 	contConf := container.Config{
 		Image:        name,
 		Cmd:          args,
@@ -189,7 +192,7 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 	logrus.WithError(err).Debug("Old container removed")
 
 	logrus.Info("Creating container from image ", name)
-	logrus.Debugf("> CONF: %+v  /  HOST: %+v", contConf, hostConf)
+	logrus.Debugf("> CONF: %#v  /  HOST: %#v", contConf, hostConf)
 	resp, err := di.cli.ContainerCreate(di.ctx, &contConf, &hostConf, nil, cntr)
 	if err != nil {
 		return fmt.Errorf("Could not create container %s: %s", name, err)
@@ -217,15 +220,18 @@ func (di *DockerInstaller) RunOnce(name, cntr string, binds, entrypoint, args []
 		// let's make it non-fatal (will check ContainerWait() instead)
 		logrus.WithError(err).Errorf("Could not get logs for container %s [%s]: %s", resp.ID, name, err)
 	} else {
+		writers := []io.Writer { os.Stdout }
 		var b bytes.Buffer
+
+		if lproc != nil { // append bytes-buff if log-processing desired
+			writers = append( writers, &b )
+		}
+
 		// note, can cancel goroutine by cancelling the context for ContainerLogs() (closes reader)
-		err = dockerLogReader(out, &b, os.Stdout)
-		if err != nil {
-			logrus.WithError(err).Warnf("Could not get complete px-oci-installer log")
-		} else if bytes.Contains(b.Bytes(), pxNeedsReboot) {
-			logrus.Warn("TODO: Cordon the node's containers")
-		} else {
-			logrus.Info("PX module OK")
+		err = dockerLogReader(out, writers...)
+
+		if lproc != nil { // invoke log-processing (if required)
+			lproc(b.Bytes(), err)
 		}
 	}
 

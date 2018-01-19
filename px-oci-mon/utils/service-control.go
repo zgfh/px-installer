@@ -49,7 +49,8 @@ func (o *OciServiceControl) RunExternal(out io.Writer, name string, params ...st
 	return cmd.Run()
 }
 
-func (o *OciServiceControl) do(op string, excludedErrorMsgs... string) error {
+// do will execute the systemctl -equivalent control command
+func (o *OciServiceControl) do(op string, excludedErrorMsgs ...string) error {
 	logrus.Infof("Doing systemctl %s %s", o.service, strings.ToUpper(op))
 	var b bytes.Buffer
 	cmd := fmt.Sprintf("systemctl %s %s", op, o.service)
@@ -121,7 +122,7 @@ func (o *OciServiceControl) Remove() error {
 	logrus.Info("Removing Portworx files")
 	unitFile := fmt.Sprintf("/etc/systemd/system/%s.service", o.service)
 	// CHECKME: NOTE that this command can run locally (should we?)
-	err = o.RunExternal(nil, "/bin/rm", "-fr", unitFile, ociDir )
+	err = o.RunExternal(nil, "/bin/rm", "-fr", unitFile, ociDir)
 	if err != nil {
 		err = fmt.Errorf("Could not remove all systemd files: %s", err)
 	}

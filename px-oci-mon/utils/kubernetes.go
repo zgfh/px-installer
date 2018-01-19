@@ -1,9 +1,8 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
-	"net"
-	"os"
 	"strings"
 
 	"github.com/portworx/sched-ops/k8s"
@@ -14,6 +13,7 @@ import (
 const (
 	enablementKey = "px/enabled"
 	serviceKey    = "px/service"
+	pxVolsName    = "kubernetes.io/portworx-volume"
 )
 
 var (
@@ -24,43 +24,6 @@ var (
 		"rm",
 	}
 )
-
-// GetLocalIPList returns the list of local IP addresses, and optionally includes local hostname.
-func GetLocalIPList(includeHostname bool) ([]string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-	ipList := make([]string, 0, len(ifaces))
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return ipList, fmt.Errorf("Error listing addresses for %s: %s", i.Name, err)
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			// process IP address
-			if ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
-				ipList = append(ipList, ip.String())
-			}
-		}
-	}
-
-	if includeHostname {
-		hn, err := os.Hostname()
-		if err == nil && hn != "" && !strings.HasPrefix(hn, "localhost") {
-			ipList = append(ipList, hn)
-		}
-	}
-
-	return ipList, nil
-}
 
 func inArray(needle string, stack ...string) (has bool) {
 	for i := range stack {
@@ -116,9 +79,66 @@ func RemoveServiceLabel(n *v1.Node) error {
 
 // FindMyNode finds LOCAL Node from Kubernetes env.
 func FindMyNode() (*v1.Node, error) {
-	ipList, err := GetLocalIPList(true)
-	if err != nil {
-		return nil, fmt.Errorf("Could not find my IPs/Hostname: %s", err)
+	return k8s.Instance().FindMyNode()
+}
+
+func podsListToString(plist []v1.Pod) string {
+	b, sep := bytes.Buffer{}, ""
+	for _, p := range plist {
+		b.WriteString(sep)
+		b.WriteString(p.GetName())
+		sep = ", "
 	}
-	return k8s.Instance().SearchNodeByAddresses(ipList)
+	return string(b.Bytes())
+}
+
+// DrainPxVolumeConsumerPods will cordon the node (prevent new PODs), and "kick out" all current PODs that use PX volumes.
+// NOTE: after successful call of this function, must call uncordonNode to undo the effects
+func DrainPxVolumeConsumerPods(n *v1.Node) error {
+	pods, err := k8s.Instance().GetPodsUsingVolumePluginByNodeName(n.GetName(), pxVolsName)
+	if err != nil {
+		return fmt.Errorf("Failed to get PX volume consumer pods: %s", err)
+	}
+
+	err = k8s.Instance().CordonNode(n.GetName())
+	if err != nil {
+		return fmt.Errorf("Failed to cordon node: %s", err)
+	}
+
+	// schedule cleanup (if failures)
+	podNames, success := "(none)", false
+	defer func() {
+		if !success {
+			logrus.WithError(err).WithField("pods", podNames).Warnf("Failed to drain PX volume consumer pods" +
+				" (rolling back changes)")
+			if err2 := k8s.Instance().UnCordonNode(n.GetName()); err2 != nil {
+				logrus.WithError(err).Errorf("Failed to uncordon node")
+			}
+		}
+	}()
+
+	if len(pods) <= 0 {
+		logrus.Info("No PX volume consumer pods found.")
+		success = true
+		return nil
+	}
+	// ELSE len(pods) > 0 ...
+
+	podNames = podsListToString(pods)
+	err = k8s.Instance().DrainPodsFromNode(n.GetName(), pods)
+	if err != nil {
+		return fmt.Errorf("Failed to drain pods: %s", err)
+	}
+	success = true
+	return nil
+}
+
+// CordonNode sets up the "PODs ban", so NO new PODs can be scheduled on this node.
+func CordonNode(n *v1.Node) error {
+	return k8s.Instance().CordonNode(n.GetName())
+}
+
+// UncordonNode removes the "PODs ban", so new PODs can be scheduled on this node.
+func UncordonNode(n *v1.Node) error {
+	return k8s.Instance().UnCordonNode(n.GetName())
 }
