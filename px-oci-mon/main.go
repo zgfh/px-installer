@@ -51,10 +51,11 @@ var (
 		"/proc/1/ns:/host_proc/1/ns":                true,
 		"/var/run/docker.sock:/var/run/docker.sock": true,
 	}
-	kubernetesArgs   = []string{"-x", "kubernetes"}
-	optPreSync       = false
-	pxNeedsRebootMsg = []byte("WARNING: May require reboot to complete the Portworx upgrade")
-	meNode           *v1.Node
+	kubernetesArgs    = []string{"-x", "kubernetes"}
+	optPreSync        = false
+	optDrainAllPods = false
+	optRestEndpoint   = ""
+	meNode            *v1.Node
 	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
@@ -70,33 +71,17 @@ func usage(args ...interface{}) {
 	fmt.Printf(`Usage: %[1]s [options]
 
 options:
-   -oci <dir>                Specify OCI directory (dfl: %[2]s)
-   -name <name>              Specify container/service name (dfl: %[3]s)
-   -sysd <file>              Specify SystemD service file (dfl: %[4]s)
-   -v <dir:dir[:shared,ro]>  Specify extra mounts
-   -c                        [REQUIRED] Specifies the cluster ID that this PX instance is to join
-   -k                        [REQUIRED] Points to your key value database, such as an etcd cluster or a consul cluster
-   -s                        [OPTIONAL if -a is used] Specifies the various drives that PX should use for storing the data
-   -d <ethX>                 Specify the data network interface
-   -m <ethX>                 Specify the management network interface
-   -z                        Instructs PX to run in zero storage mode
-   -f                        Instructs PX to use an unmounted drive even if it has a filesystem on it
-   -a                        Instructs PX to use any available, unused and unmounted drives
-   -A                        Instructs PX to use any available, unused and unmounted drives or partitions
-   -x <swarm|kubernetes>     Specify scheduler being used in the environment
-   -t <token>                Portworx lighthouse token for cluster
+   --endpoint <ip:port>  Start REST service at specific endpoint
+   --sync                Will issue sync operation before stopping/restarting the PX-OCI service
+   --drain-all           Will drain ALL PX-dependent pods before upgrade (dfl. only managed nodes get drained)
+   --log <file>          Will use logfile instead of Docker-log
+   --debug               Increase logs-verbosity to debug-level
+   *                     Any additional options will be passed on to px-runc
 
-kvdb-options:
-   -userpwd <user:passwd>    Username and password for ETCD authentication
-   -ca <file>                Specify location of CA file for ETCD authentication
-   -cert <file>              Specify locationof certificate for ETCD authentication
-   -key <file>               Specify location of certificate key for ETCD authentication
-   -acltoken <token>         ACL token value used for Consul authentication
+NOTE that any options not explicitly listed above, will be passed directly to px-runc.
+For details please see http://docs.portworx.com/runc
 
-examples:
-   %[1]s -k etcd://70.0.1.65:2379 -c MY_CLUSTER_ID -s /dev/sdc -d enp0s8 -m enp0s8
-
-`, os.Args[0], baseDir, baseServiceName, fmt.Sprintf(baseServiceFileFmt, baseServiceName))
+`, os.Args[0])
 	os.Exit(1)
 }
 
@@ -182,7 +167,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 				// log incomplete, require cordoning/draining
 				logrus.WithError(err).Warnf("Could not get complete px-oci-installer log")
 				retSt.needCordon = true
-			} else if bytes.Contains(log, pxNeedsRebootMsg) {
+			} else if bytes.Contains(log, []byte(" require reboot ")) {
 				logrus.Warn("Will require Cordoning/Draining the node's containers")
 				retSt.needCordon = true
 			} else {
@@ -315,10 +300,10 @@ func validateMounted(mounts ...string) error {
 	for _, m := range mounts {
 		err = syscall.Lstat(m, &st1)
 		if err != nil {
-			logrus.WithError(err).Errorf("File/Directory %s not found - please mount via 'run -v ...' option", m)
+			logrus.WithError(err).Errorf("Directory/File %s not found - please add as mount", m)
 			errMounts = append(errMounts, m)
 		} else if st0.Dev == st1.Dev {
-			logrus.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m)
+			logrus.Errorf("Directory/File %s not mounted - please add as mount", m)
 			errMounts = append(errMounts, m)
 		}
 	}
@@ -445,7 +430,7 @@ func finalizePxOciInstall(status installStatus) error {
 
 	if status.needInstall {
 		if status.needCordon {
-			err := utils.DrainPxVolumeConsumerPods(meNode)
+			err := utils.DrainPxVolumeConsumerPods(meNode, optDrainAllPods)
 			if err != nil {
 				logrus.WithError(err).Error("Error draining PX-dependent pods")
 			} else {
@@ -715,9 +700,14 @@ func setLogfile(fname string) error {
 }
 
 func main() {
-	logrus.Infof("Input arguments: %q", os.Args)
+	logrus.Infof("Input arguments: %v", os.Args)
 	args := make([]string, 0, len(os.Args))
 	var scheduler *string
+	ensureExtraArgFn := func(i int, opt string) {
+		if (i+1) >= len(os.Args) {
+			usage("ERROR: Argument ", opt, " requires extra option!  Please correct your configuration.")
+		}
+	}
 	for i := 0; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "":
@@ -725,28 +715,31 @@ func main() {
 			i++ // skip empty args
 		case "--sync":
 			optPreSync = true // local option
+		case "--drain-all":
+			optDrainAllPods = true // local option
+		case "--endpoint":
+			ensureExtraArgFn(i, os.Args[i])
+			i++
+			optRestEndpoint = os.Args[i] // local option
 		case "--log":
+			ensureExtraArgFn(i, os.Args[i])
 			i++
 			if err := setLogfile(os.Args[i]); err != nil {
 				logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
 				os.Exit(1)
 			}
 		case "-x":
-			i1 := i + 1
-			if i1 >= len(os.Args) {
-				logrus.Error("ERROR: Argument '-x' specified, but no scheduler provided." +
-					"  Please correct your configuration.")
-				os.Exit(1)
-			}
-			if os.Args[i1] != "kubernetes" {
+			ensureExtraArgFn(i, os.Args[i])
+			i++
+			if os.Args[i] != "kubernetes" {
 				logrus.Errorf("Invalid option '-x %s' provided."+
-					"  Please correct your configuration.", os.Args[i1])
+					"  Please correct your configuration.", os.Args[i])
 				os.Exit(1)
-			} else {
-				args = append(args, kubernetesArgs...)
-				scheduler = &os.Args[i1]
-				i += 2
 			}
+			args = append(args, kubernetesArgs...)
+			scheduler = &os.Args[i]
+		case "--help", "-h":
+			usage()
 		case "--debug":
 			debugsOn = true
 			fallthrough
@@ -758,7 +751,7 @@ func main() {
 		logrus.Warnf("Scheduler not specified - adding `-x kubernetes` to the parameters")
 		args = append(args, kubernetesArgs...)
 	}
-	logrus.Infof("Updated arguments: %q", args)
+	logrus.Infof("Updated arguments: %v", args)
 	os.Args = args // reset to [potentially] trimmed down version
 
 	if debugsOn || os.Getenv("DEBUG") != "" { // Debugs on?
@@ -793,7 +786,7 @@ func main() {
 	ociRestServer = utils.NewRESTServlet(ociService, meNode)
 
 	logrus.Info("Activating REST server")
-	ociRestServer.Start()
+	ociRestServer.Start(optRestEndpoint)
 
 	lastOp := "Install"
 	if utils.IsPxDisabled(meNode) {

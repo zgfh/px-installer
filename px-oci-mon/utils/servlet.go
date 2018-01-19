@@ -18,7 +18,7 @@ const (
 	httpHeaderContentType = "Content-Type"
 	httpHeaderContentLen  = "Content-Length"
 	httpHeaderConnection  = "Connection"
-	ociServletPort        = 9015
+	defaultOciEndpoint    = "127.0.0.1:9015"
 	nodeHealthURL         = "http://127.0.0.1:9001/v1/cluster/nodehealth"
 	svcUriPrefix          = "/service/"
 	svcUriPrefixLen       = len(svcUriPrefix)
@@ -104,11 +104,9 @@ func (s *OciRESTServlet) handleOciRest(resp http.ResponseWriter, req *http.Reque
 		case opDisable:
 			err = s.ociCtl.Disable()
 		case "drain":
-			err = DrainPxVolumeConsumerPods(s.node)
-		case "cordon":
-			err = CordonNode(s.node)
-		case "uncordon":
-			err = UncordonNode(s.node)
+			err = DrainPxVolumeConsumerPods(s.node, true)
+		case "drain-managed":
+			err = DrainPxVolumeConsumerPods(s.node, false)
 		default:
 			sendInvalidReq()
 			break
@@ -218,10 +216,12 @@ func (s *OciRESTServlet) flush(resp http.ResponseWriter) {
 }
 
 // Start starts the OCI REST server
-func (s *OciRESTServlet) Start() {
+func (s *OciRESTServlet) Start(addr string) {
+	if addr == "" {
+		addr = defaultOciEndpoint
+	}
 	if s.srv == nil {
 		http.HandleFunc("/", s.handleOciRest)
-		addr := fmt.Sprintf("127.0.0.1:%d", ociServletPort)
 		s.srv = &http.Server{Addr: addr}
 		go func() {
 			if err := s.srv.ListenAndServe(); err != nil {

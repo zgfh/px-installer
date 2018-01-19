@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	enablementKey = "px/enabled"
-	serviceKey    = "px/service"
-	pxVolsName    = "kubernetes.io/portworx-volume"
+	enablementKey            = "px/enabled"
+	serviceKey               = "px/service"
+	pxStorageProvisionerName = "kubernetes.io/portworx-volume"
 )
 
 var (
@@ -93,44 +93,49 @@ func podsListToString(plist []v1.Pod) string {
 }
 
 // DrainPxVolumeConsumerPods will cordon the node (prevent new PODs), and "kick out" all current PODs that use PX volumes.
+// PARAMS: K8s Node (self) where to run the command, and bool-flag specifying if all PX-dependent nodes should be drained,
+// or only the managed ones (note only managed pods are guaranteed to restart elsewhere).
 // NOTE: after successful call of this function, must call uncordonNode to undo the effects
-func DrainPxVolumeConsumerPods(n *v1.Node) error {
-	pods, err := k8s.Instance().GetPodsUsingVolumePluginByNodeName(n.GetName(), pxVolsName)
+func DrainPxVolumeConsumerPods(n *v1.Node, drainAllPxDepPods bool) error {
+	k8si := k8s.Instance()
+	pods, err := k8si.GetPodsUsingVolumePluginByNodeName(n.GetName(), pxStorageProvisionerName)
 	if err != nil {
-		return fmt.Errorf("Failed to get PX volume consumer pods: %s", err)
+		return fmt.Errorf("Failed to get PX consumer pods: %s", err)
 	}
 
-	err = k8s.Instance().CordonNode(n.GetName())
-	if err != nil {
-		return fmt.Errorf("Failed to cordon node: %s", err)
-	}
-
-	// schedule cleanup (if failures)
-	podNames, success := "(none)", false
-	defer func() {
-		if !success {
-			logrus.WithError(err).WithField("pods", podNames).Warnf("Failed to drain PX volume consumer pods" +
-				" (rolling back changes)")
-			if err2 := k8s.Instance().UnCordonNode(n.GetName()); err2 != nil {
-				logrus.WithError(err).Errorf("Failed to uncordon node")
+	// should we filter out only managed pods?
+	podNames := podsListToString(pods)
+	if !drainAllPxDepPods && len(pods) > 0 {
+		newPods := make([]v1.Pod, 0, len(pods))
+		for _, p := range pods {
+			if k8si.IsPodBeingManaged(p) {
+				newPods = append(newPods, p)
 			}
 		}
-	}()
+		if len(pods) != len(newPods) {
+			oldPodNames := podNames
+			pods = newPods
+			podNames = podsListToString(pods)
+			logrus.Infof("Reduced list of PX consumer pods from '%s' to '%s'", oldPodNames, podNames)
+		}
+	}
 
 	if len(pods) <= 0 {
-		logrus.Info("No PX volume consumer pods found.")
-		success = true
+		logrus.Info("No PX consumer pods found.")
 		return nil
 	}
-	// ELSE len(pods) > 0 ...
+	// ELSE len(pods) > 0 ... we have extra work to do
 
 	podNames = podsListToString(pods)
-	err = k8s.Instance().DrainPodsFromNode(n.GetName(), pods)
+	err = k8si.DrainPodsFromNode(n.GetName(), pods)
 	if err != nil {
-		return fmt.Errorf("Failed to drain pods: %s", err)
+		logrus.WithError(err).WithField("pods", podNames).Warnf("Failed to drain PX volume consumer pods")
+		err = fmt.Errorf("Failed to drain pods: %s", err)
+	} else {
+		logrus.WithField("pods", podNames).Warnf("PX consumer pods drained successfully" +
+			" - node cordon in effect.")
 	}
-	success = true
-	return nil
+	return err
 }
 
 // CordonNode sets up the "PODs ban", so NO new PODs can be scheduled on this node.
