@@ -1,9 +1,8 @@
 package utils
 
 import (
+	"bytes"
 	"fmt"
-	"net"
-	"os"
 	"strings"
 
 	"github.com/portworx/sched-ops/k8s"
@@ -12,8 +11,9 @@ import (
 )
 
 const (
-	enablementKey = "px/enabled"
-	serviceKey    = "px/service"
+	enablementKey            = "px/enabled"
+	serviceKey               = "px/service"
+	pxStorageProvisionerName = "kubernetes.io/portworx-volume"
 )
 
 var (
@@ -24,43 +24,6 @@ var (
 		"rm",
 	}
 )
-
-// GetLocalIPList returns the list of local IP addresses, and optionally includes local hostname.
-func GetLocalIPList(includeHostname bool) ([]string, error) {
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-	ipList := make([]string, 0, len(ifaces))
-	for _, i := range ifaces {
-		addrs, err := i.Addrs()
-		if err != nil {
-			return ipList, fmt.Errorf("Error listing addresses for %s: %s", i.Name, err)
-		}
-		for _, addr := range addrs {
-			var ip net.IP
-			switch v := addr.(type) {
-			case *net.IPNet:
-				ip = v.IP
-			case *net.IPAddr:
-				ip = v.IP
-			}
-			// process IP address
-			if ip != nil && !ip.IsLoopback() && !ip.IsUnspecified() {
-				ipList = append(ipList, ip.String())
-			}
-		}
-	}
-
-	if includeHostname {
-		hn, err := os.Hostname()
-		if err == nil && hn != "" && !strings.HasPrefix(hn, "localhost") {
-			ipList = append(ipList, hn)
-		}
-	}
-
-	return ipList, nil
-}
 
 func inArray(needle string, stack ...string) (has bool) {
 	for i := range stack {
@@ -116,9 +79,71 @@ func RemoveServiceLabel(n *v1.Node) error {
 
 // FindMyNode finds LOCAL Node from Kubernetes env.
 func FindMyNode() (*v1.Node, error) {
-	ipList, err := GetLocalIPList(true)
-	if err != nil {
-		return nil, fmt.Errorf("Could not find my IPs/Hostname: %s", err)
+	return k8s.Instance().FindMyNode()
+}
+
+func podsListToString(plist []v1.Pod) string {
+	b, sep := bytes.Buffer{}, ""
+	for _, p := range plist {
+		b.WriteString(sep)
+		b.WriteString(p.GetName())
+		sep = ", "
 	}
-	return k8s.Instance().SearchNodeByAddresses(ipList)
+	return string(b.Bytes())
+}
+
+// DrainPxVolumeConsumerPods will cordon the node (prevent new PODs), and "kick out" all current PODs that use PX volumes.
+// PARAMS: K8s Node (self) where to run the command, and bool-flag specifying if all PX-dependent nodes should be drained,
+// or only the managed ones (note only managed pods are guaranteed to restart elsewhere).
+// NOTE: after successful call of this function, must call uncordonNode to undo the effects
+func DrainPxVolumeConsumerPods(n *v1.Node, drainAllPxDepPods bool) error {
+	k8si := k8s.Instance()
+	pods, err := k8si.GetPodsUsingVolumePluginByNodeName(n.GetName(), pxStorageProvisionerName)
+	if err != nil {
+		return fmt.Errorf("Failed to get PX consumer pods: %s", err)
+	}
+
+	// should we filter out only managed pods?
+	podNames := podsListToString(pods)
+	if !drainAllPxDepPods && len(pods) > 0 {
+		newPods := make([]v1.Pod, 0, len(pods))
+		for _, p := range pods {
+			if k8si.IsPodBeingManaged(p) {
+				newPods = append(newPods, p)
+			}
+		}
+		if len(pods) != len(newPods) {
+			oldPodNames := podNames
+			pods = newPods
+			podNames = podsListToString(pods)
+			logrus.Infof("Reduced list of PX consumer pods from '%s' to '%s'", oldPodNames, podNames)
+		}
+	}
+
+	if len(pods) <= 0 {
+		logrus.Info("No PX consumer pods found.")
+		return nil
+	}
+	// ELSE len(pods) > 0 ... we have extra work to do
+
+	podNames = podsListToString(pods)
+	err = k8si.DrainPodsFromNode(n.GetName(), pods)
+	if err != nil {
+		logrus.WithError(err).WithField("pods", podNames).Warnf("Failed to drain PX volume consumer pods")
+		err = fmt.Errorf("Failed to drain pods: %s", err)
+	} else {
+		logrus.WithField("pods", podNames).Warnf("PX consumer pods drained successfully" +
+			" - node cordon in effect.")
+	}
+	return err
+}
+
+// CordonNode sets up the "PODs ban", so NO new PODs can be scheduled on this node.
+func CordonNode(n *v1.Node) error {
+	return k8s.Instance().CordonNode(n.GetName())
+}
+
+// UncordonNode removes the "PODs ban", so new PODs can be scheduled on this node.
+func UncordonNode(n *v1.Node) error {
+	return k8s.Instance().UnCordonNode(n.GetName())
 }

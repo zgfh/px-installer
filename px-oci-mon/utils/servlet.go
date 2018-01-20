@@ -3,7 +3,9 @@ package utils
 import (
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"io"
 	"io/ioutil"
+	"k8s.io/api/core/v1"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,8 +18,10 @@ const (
 	httpHeaderContentType = "Content-Type"
 	httpHeaderContentLen  = "Content-Length"
 	httpHeaderConnection  = "Connection"
-	ociServletPort        = 9015
+	defaultOciEndpoint    = "127.0.0.1:9015"
 	nodeHealthURL         = "http://127.0.0.1:9001/v1/cluster/nodehealth"
+	svcUriPrefix          = "/service/"
+	svcUriPrefixLen       = len(svcUriPrefix)
 )
 
 type installState int
@@ -30,15 +34,18 @@ const (
 
 // OciRESTServlet provides REST controls for OCI Monitor
 type OciRESTServlet struct {
-	ociCtl *OciServiceControl
-	lock   *sync.Mutex
-	cli    *http.Client
-	srv    *http.Server
-	state  installState
+	ociCtl      *OciServiceControl
+	lock        *sync.Mutex
+	cli         *http.Client
+	srv         *http.Server
+	state       installState
+	node        *v1.Node
+	errorsGrace *time.Time
 }
 
 // NewRESTServlet returns new instance of the OciRESTServlet
-func NewRESTServlet(ctl *OciServiceControl) *OciRESTServlet {
+func NewRESTServlet(ctl *OciServiceControl, node *v1.Node) *OciRESTServlet {
+	grace := time.Now().Add(60 * time.Second)
 	return &OciRESTServlet{
 		ociCtl: ctl,
 		lock:   &sync.Mutex{},
@@ -48,7 +55,9 @@ func NewRESTServlet(ctl *OciServiceControl) *OciRESTServlet {
 			},
 			Timeout: 5 * time.Second,
 		},
-		state: unknown,
+		state:       unknown,
+		node:        node,
+		errorsGrace: &grace,
 	}
 }
 
@@ -58,6 +67,7 @@ func (s *OciRESTServlet) handleOciRest(resp http.ResponseWriter, req *http.Reque
 	header.Add(httpHeaderServer, "Portworx/OCI-monitor v1.0")
 
 	sendInvalidReq := func() {
+		logrus.Warnf("Ignoring REST call %s %s", req.Method, req.RequestURI)
 		resp.WriteHeader(http.StatusMethodNotAllowed)
 		header.Add(httpHeaderConnection, "close")
 	}
@@ -71,29 +81,41 @@ func (s *OciRESTServlet) handleOciRest(resp http.ResponseWriter, req *http.Reque
 		s.handleGetHead(resp, true)
 
 	case http.MethodPost:
-		var err error
-		s.lock.Lock()
-		defer s.lock.Unlock()
-		if req.RequestURI == "/service/start" {
-			err = s.ociCtl.Start()
-		} else if req.RequestURI == "/service/stop" {
-			err = s.ociCtl.Stop()
-		} else if req.RequestURI == "/service/restart" {
-			err = s.ociCtl.Restart()
-		} else if req.RequestURI == "/service/enable" {
-			err = s.ociCtl.Enable()
-		} else if req.RequestURI == "/service/disable" {
-			err = s.ociCtl.Disable()
-		} else if req.RequestURI == "/service/remove" {
-			err = s.ociCtl.Remove()
-		} else {
-			logrus.Warnf("Ignoring REST call %s %s", req.Method, req.RequestURI)
+		if !strings.HasPrefix(req.RequestURI, svcUriPrefix) || len(req.RequestURI) <= svcUriPrefixLen+1 {
 			sendInvalidReq()
 			break
 		}
+		op := req.RequestURI[svcUriPrefixLen:]
+
+		s.lock.Lock()
+		defer s.lock.Unlock()
+
+		var err error
+
+		switch op {
+		case opStart:
+			err = s.ociCtl.Start()
+		case opStop:
+			err = s.ociCtl.Stop()
+		case opRestart:
+			err = s.ociCtl.Restart()
+		case opEnable:
+			err = s.ociCtl.Enable()
+		case opDisable:
+			err = s.ociCtl.Disable()
+		case "drain":
+			err = DrainPxVolumeConsumerPods(s.node, true)
+		case "drain-managed":
+			err = DrainPxVolumeConsumerPods(s.node, false)
+		default:
+			sendInvalidReq()
+			break
+		}
+
 		if err == nil {
-			content := []byte(fmt.Sprintf("REST action%s completed successfully\n",
-				strings.ToUpper(strings.Replace(req.RequestURI, "/", " ", -1))))
+			msg := fmt.Sprintf("REST action %s completed successfully\n", strings.ToUpper(op))
+			logrus.Info(msg)
+			content := []byte(msg)
 			header := resp.Header()
 			header.Add(httpHeaderContentType, "text/plain")
 			header.Add(httpHeaderContentLen, strconv.Itoa(len(content)))
@@ -101,11 +123,10 @@ func (s *OciRESTServlet) handleOciRest(resp http.ResponseWriter, req *http.Reque
 			resp.Write(content)
 		} else {
 			logrus.WithError(err).Errorf("Error with REST call POST %s", req.RequestURI)
-			http.Error(resp, err.Error(), http.StatusInternalServerError)
+			http.Error(resp, "INTERNAL ERROR - please check servers logs", http.StatusInternalServerError)
 		}
 
 	default:
-		logrus.Warnf("Ignoring REST call %s %s", req.Method, req.RequestURI)
 		sendInvalidReq()
 	}
 	s.flush(resp)
@@ -145,11 +166,16 @@ func (s *OciRESTServlet) handleGetHead(resp http.ResponseWriter, sendData bool) 
 	}()
 
 	if err != nil {
-		logrus.WithError(err).Warn("Could not retrieve PX node status")
+		if s.errorsGrace != nil && time.Now().Before(*s.errorsGrace) {
+			logrus.WithError(err).Debug("Could not retrieve PX node status")
+		} else { // grace period expired -- warnings become errors
+			s.errorsGrace = nil
+			logrus.WithError(err).Warn("Could not retrieve PX node status")
+		}
 		sendResp(http.StatusServiceUnavailable, unknownStatusMsg)
 		if pxResp != nil && pxResp.Body != nil {
-			logrus.Debug("Draining the invalid HTTP PX response") // .. so we can reuse keepalive session
-			ioutil.ReadAll(pxResp.Body)
+			// Draining the invalid HTTP PX response, so we can reuse keepalive session
+			io.Copy(ioutil.Discard, pxResp.Body)
 		}
 	} else {
 		content, err := ioutil.ReadAll(pxResp.Body)
@@ -190,10 +216,12 @@ func (s *OciRESTServlet) flush(resp http.ResponseWriter) {
 }
 
 // Start starts the OCI REST server
-func (s *OciRESTServlet) Start() {
+func (s *OciRESTServlet) Start(addr string) {
+	if addr == "" {
+		addr = defaultOciEndpoint
+	}
 	if s.srv == nil {
 		http.HandleFunc("/", s.handleOciRest)
-		addr := fmt.Sprintf("127.0.0.1:%d", ociServletPort)
 		s.srv = &http.Server{Addr: addr}
 		go func() {
 			if err := s.srv.ListenAndServe(); err != nil {

@@ -29,6 +29,8 @@ const (
 	pxImageIDKey       = "PX_IMAGE_ID"
 	instK8sDir         = "/opt/pwx/oci/inst-k8s"
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
+	sha1verBegin       = 7
+	sha1verEnd         = 19
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix = "portworx/px-enterprise"
 	defaultPXTAG  = "1.2.12.1"
@@ -49,8 +51,11 @@ var (
 		"/proc/1/ns:/host_proc/1/ns":                true,
 		"/var/run/docker.sock:/var/run/docker.sock": true,
 	}
-	kubernetesArgs = []string{"-x", "kubernetes"}
-	optPreSync     = false
+	kubernetesArgs    = []string{"-x", "kubernetes"}
+	optPreSync        = false
+	optDrainAllPods = false
+	optRestEndpoint   = ""
+	meNode            *v1.Node
 	// PXTAG is externally defined image tag (can use `go build -ldflags "-X main.PXTAG=1.2.3" ... `
 	// to set portworx/px-enterprise:1.2.3)
 	PXTAG string
@@ -66,33 +71,17 @@ func usage(args ...interface{}) {
 	fmt.Printf(`Usage: %[1]s [options]
 
 options:
-   -oci <dir>                Specify OCI directory (dfl: %[2]s)
-   -name <name>              Specify container/service name (dfl: %[3]s)
-   -sysd <file>              Specify SystemD service file (dfl: %[4]s)
-   -v <dir:dir[:shared,ro]>  Specify extra mounts
-   -c                        [REQUIRED] Specifies the cluster ID that this PX instance is to join
-   -k                        [REQUIRED] Points to your key value database, such as an etcd cluster or a consul cluster
-   -s                        [OPTIONAL if -a is used] Specifies the various drives that PX should use for storing the data
-   -d <ethX>                 Specify the data network interface
-   -m <ethX>                 Specify the management network interface
-   -z                        Instructs PX to run in zero storage mode
-   -f                        Instructs PX to use an unmounted drive even if it has a filesystem on it
-   -a                        Instructs PX to use any available, unused and unmounted drives
-   -A                        Instructs PX to use any available, unused and unmounted drives or partitions
-   -x <swarm|kubernetes>     Specify scheduler being used in the environment
-   -t <token>                Portworx lighthouse token for cluster
+   --endpoint <ip:port>  Start REST service at specific endpoint
+   --sync                Will issue sync operation before stopping/restarting the PX-OCI service
+   --drain-all           Will drain ALL PX-dependent pods before upgrade (dfl. only managed nodes get drained)
+   --log <file>          Will use logfile instead of Docker-log
+   --debug               Increase logs-verbosity to debug-level
+   *                     Any additional options will be passed on to px-runc
 
-kvdb-options:
-   -userpwd <user:passwd>    Username and password for ETCD authentication
-   -ca <file>                Specify location of CA file for ETCD authentication
-   -cert <file>              Specify locationof certificate for ETCD authentication
-   -key <file>               Specify location of certificate key for ETCD authentication
-   -acltoken <token>         ACL token value used for Consul authentication
+NOTE that any options not explicitly listed above, will be passed directly to px-runc.
+For details please see http://docs.portworx.com/runc
 
-examples:
-   %[1]s -k etcd://70.0.1.65:2379 -c MY_CLUSTER_ID -s /dev/sdc -d enp0s8 -m enp0s8
-
-`, os.Args[0], baseDir, baseServiceName, fmt.Sprintf(baseServiceFileFmt, baseServiceName))
+`, os.Args[0])
 	os.Exit(1)
 }
 
@@ -113,10 +102,17 @@ func (c *cachingOutput) String() string {
 
 // -- Output Filters
 
-func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (bool, bool, error) {
+type installStatus struct {
+	needRestart bool
+	needInstall bool
+	needCordon  bool
+}
+
+// installPxFromOciImage downloads the Docker image, and (if required) runs the install/upgrade to the alternate location.
+func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *utils.SimpleContainerConfig) (installStatus, error) {
 	logrus.Info("Downloading Portworx image...")
 
-	pxNeedsRestart := false
+	retSt := installStatus{false, false, false} // assume no install/restart/cordon needed
 
 	downloadCbFn := func() error {
 		logrus.Info("Docker image download detected - assuming upgrade and setting OCI-mon to unhealthy")
@@ -131,23 +127,23 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 			" - have you specified REGISTRY_USER/REGISTRY_PASS env. variables?")
 	}
 
-	pxNeedsInstall := true
-	if pulledID, err := di.GetImageID(imageName); err == nil && len(pulledID) > 19 {
+	retSt.needInstall = true // assume yes, fix later
+	if pulledID, err := di.GetImageID(imageName); err == nil && len(pulledID) > sha1verEnd {
 		logrus.Info("Pulled PX image ID ", pulledID)
 		cfg.Env = append(cfg.Env, pxImageIDKey+"="+pulledID)
 
 		// compare w/ installed image
 		ociConfigFile := path.Join(baseDir, "config.json")
 		installedID, err := utils.ExtractEnvFromOciConfig(ociConfigFile, pxImageIDKey)
-		if err == nil && len(installedID) > 19 {
+		if err == nil && len(installedID) > sha1verEnd {
 			if pulledID == installedID {
 				logrus.Infof("Installed image ID %s same as pulled image ID %s",
-					installedID[7:19], pulledID[7:19])
-				pxNeedsInstall = false
+					installedID[sha1verBegin:sha1verEnd], pulledID[sha1verBegin:sha1verEnd])
+				retSt.needInstall = false
 				ociRestServer.SetStateInstallFinished()
 			} else {
 				logrus.Infof("Installed image ID %s _DIFFERENT_ than pulled image ID %s",
-					installedID[7:19], pulledID[7:19])
+					installedID[sha1verBegin:sha1verEnd], pulledID[sha1verBegin:sha1verEnd])
 			}
 		} else {
 			logrus.WithError(err).Warnf("Could not retrieve installed OCI image ID (is this initial install?)")
@@ -156,7 +152,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 		logrus.WithError(err).Error("Could not retrieve PX image ID")
 	}
 
-	if pxNeedsInstall {
+	if retSt.needInstall {
 		logrus.Info("Installing/Upgrading Portworx OCI files (restart pending)")
 
 		args := []string{"--upgrade"}
@@ -164,8 +160,23 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 			// do verbose rsync if debug is turned on
 			args = append(args, "--debug")
 		}
+
+		// set up log-parser to determine if cordoning/draining will be required
+		logProcCb := func(log []byte, err error) {
+			if err != nil {
+				// log incomplete, require cordoning/draining
+				logrus.WithError(err).Warnf("Could not get complete px-oci-installer log")
+				retSt.needCordon = true
+			} else if bytes.Contains(log, []byte(" require reboot ")) {
+				logrus.Warn("Will require Cordoning/Draining the node's containers")
+				retSt.needCordon = true
+			} else {
+				logrus.Info("PX module OK (no cordon/pod-draining required)")
+				retSt.needCordon = false
+			}
+		}
 		err := di.RunOnce(imageName, ociInstallerName, []string{instK8sDir + ":/opt/pwx", "/etc/pwx:/etc/pwx"},
-			[]string{"/runc-entry-point.sh"}, args)
+			[]string{"/runc-entry-point.sh"}, args, logProcCb)
 		if err != nil {
 			logrus.WithError(err).Error("Could not install ", imageName)
 			usage("Could not install " + imageName +
@@ -179,10 +190,11 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	args := make([]string, 0, 6+len(cfg.Args)+len(cfg.Env)*2+len(cfg.Mounts)*2)
 	var pxUnitFile string
 	var oldUnitFileModTime time.Time
-	if pxNeedsInstall {
+	if retSt.needInstall {
 		// NOTE: we dumped the OCI into a separate directory!
 		// now we need a tweaked install-- example /opt/pwx/k8s/bin/px-runc install -oci /opt/pwx/k8s/oci -sysd /dev/null -c zox-dbg-mk126 -m enp0s8 -d enp0s8 -s /dev/sdc
-		args = append(args, path.Join(instK8sDir, "bin/px-runc"), "install", "-oci", path.Join(instK8sDir, "oci"), "-sysd", "/dev/null")
+		args = append(args, path.Join(instK8sDir, "bin/px-runc"), "install", "-oci",
+			path.Join(instK8sDir, "oci"), "-sysd", "/dev/null")
 		pxUnitFile = ""
 	} else {
 		args = append(args, "/opt/pwx/bin/px-runc", "install")
@@ -227,7 +239,8 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	var installOutput cachingOutput
 	if err = ociService.RunExternal(&installOutput, args[0], args[1:]...); err != nil {
 		logrus.WithError(err).Error("Could not install PX-RunC")
-		return pxNeedsInstall, true, err
+		retSt.needRestart = true
+		return retSt, err
 	}
 
 	/*
@@ -238,7 +251,7 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 	if pxUnitFile != "" {
 		if oldUnitFileModTime.IsZero() {
 			logrus.Info("Portworx service restart required due to initial config.")
-			pxNeedsRestart = true
+			retSt.needRestart = true
 			// let's also do reload + enable of the service
 			if err = ociService.Reload(); err != nil {
 				logrus.WithError(err).Error("Could not reload service.")
@@ -247,29 +260,31 @@ func installPxFromOciImage(di *utils.DockerInstaller, imageName string, cfg *uti
 				logrus.WithError(err).Error("Could not enable service.")
 			}
 		} else if newUnitSt, err := os.Stat(pxUnitFile); err != nil {
-			return pxNeedsInstall, true, fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
+			err2 := fmt.Errorf("Could not stat %s: %s", pxUnitFile, err)
+			retSt.needRestart = true
+			return retSt, err2
 		} else if newUnitSt.ModTime().Sub(oldUnitFileModTime) > 0 {
 			logrus.Info("Portworx service restart required due to updated ", pxUnitFile)
-			pxNeedsRestart = true
+			retSt.needRestart = true
 		}
-	} else if pxNeedsInstall {
+	} else if retSt.needInstall {
 		logrus.Info("Portworx service restart required due to OCI upgrade/install")
-		pxNeedsRestart = true
+		retSt.needRestart = true
 	}
 
 	// 2. check output of "px-runc install"
 	if isRestartRequired(installOutput.String()) {
 		logrus.Info("Portworx service restart required due to configuration update.")
-		pxNeedsRestart = true
+		retSt.needRestart = true
 	}
 
 	// 3. check for missing /etc/pwx/config.json
 	if _, err := os.Stat(pxConfigFile); err != nil {
 		logrus.WithError(err).Debug("Error stat ", pxConfigFile)
 		logrus.Info("Portworx service restart required due to missing/invalid ", pxConfigFile)
-		pxNeedsRestart = true
+		retSt.needRestart = true
 	}
-	return pxNeedsInstall, pxNeedsRestart, nil
+	return retSt, nil
 }
 
 func validateMounted(mounts ...string) error {
@@ -285,10 +300,10 @@ func validateMounted(mounts ...string) error {
 	for _, m := range mounts {
 		err = syscall.Lstat(m, &st1)
 		if err != nil {
-			logrus.WithError(err).Errorf("File/Directory %s not found - please mount via 'run -v ...' option", m)
+			logrus.WithError(err).Errorf("Directory/File %s not found - please add as mount", m)
 			errMounts = append(errMounts, m)
 		} else if st0.Dev == st1.Dev {
-			logrus.Errorf("File/Directory %s not mounted - please mount via 'run -v ...' option", m)
+			logrus.Errorf("Directory/File %s not mounted - please add as mount", m)
 			errMounts = append(errMounts, m)
 		}
 	}
@@ -405,7 +420,7 @@ func switchOciInstall() error {
 	return nil
 }
 
-func finalizePxOciInstall(installed bool) error {
+func finalizePxOciInstall(status installStatus) error {
 	initialInstall := !isExist(fmt.Sprintf(baseServiceFileFmt, baseServiceName))
 
 	if optPreSync {
@@ -413,7 +428,22 @@ func finalizePxOciInstall(installed bool) error {
 		syscall.Sync()
 	}
 
-	if installed {
+	if status.needInstall {
+		if status.needCordon {
+			err := utils.DrainPxVolumeConsumerPods(meNode, optDrainAllPods)
+			if err != nil {
+				logrus.WithError(err).Error("Error draining PX-dependent pods")
+			} else {
+				logrus.Info("PX-dependent pods successfully drained.")
+				defer func() {
+					if err = utils.UncordonNode(meNode); err != nil {
+						logrus.WithError(err).Error("Error Uncordoning node")
+					} else {
+						logrus.Info("Node successfully uncordoned")
+					}
+				}()
+			}
+		}
 		if err := switchOciInstall(); err != nil {
 			return err
 		}
@@ -483,14 +513,14 @@ func doInstall() error {
 	opts.Env = envListFilt
 
 	// TODO: Sanity checks for options
-	logrus.Debugf("OPTIONS:: %+v\n", opts)
-	wasInstallRequired, isRestartRequired, err := installPxFromOciImage(di, pxImage, opts)
+	logrus.Debugf("OPTIONS:: %#v", opts)
+	instSt, err := installPxFromOciImage(di, pxImage, opts)
 	if err != nil {
 		return fmt.Errorf("Could not install Portworx service: %s", err)
 	}
 
-	if wasInstallRequired || isRestartRequired {
-		if err = finalizePxOciInstall(wasInstallRequired); err != nil {
+	if instSt.needRestart || instSt.needInstall || instSt.needCordon {
+		if err = finalizePxOciInstall(instSt); err != nil {
 			return fmt.Errorf("Could not finalize OCI install: %s", err)
 		}
 	} else {
@@ -670,9 +700,14 @@ func setLogfile(fname string) error {
 }
 
 func main() {
-	logrus.Infof("Input arguments: %q", os.Args)
+	logrus.Infof("Input arguments: %v", os.Args)
 	args := make([]string, 0, len(os.Args))
 	var scheduler *string
+	ensureExtraArgFn := func(i int, opt string) {
+		if (i+1) >= len(os.Args) {
+			usage("ERROR: Argument ", opt, " requires extra option!  Please correct your configuration.")
+		}
+	}
 	for i := 0; i < len(os.Args); i++ {
 		switch os.Args[i] {
 		case "":
@@ -680,28 +715,31 @@ func main() {
 			i++ // skip empty args
 		case "--sync":
 			optPreSync = true // local option
+		case "--drain-all":
+			optDrainAllPods = true // local option
+		case "--endpoint":
+			ensureExtraArgFn(i, os.Args[i])
+			i++
+			optRestEndpoint = os.Args[i] // local option
 		case "--log":
+			ensureExtraArgFn(i, os.Args[i])
 			i++
 			if err := setLogfile(os.Args[i]); err != nil {
 				logrus.Errorf("Could not set up logging to %s: %s", os.Args[i], err)
 				os.Exit(1)
 			}
 		case "-x":
-			i1 := i + 1
-			if i1 >= len(os.Args) {
-				logrus.Error("ERROR: Argument '-x' specified, but no scheduler provided." +
-					"  Please correct your configuration.")
-				os.Exit(1)
-			}
-			if os.Args[i1] != "kubernetes" {
+			ensureExtraArgFn(i, os.Args[i])
+			i++
+			if os.Args[i] != "kubernetes" {
 				logrus.Errorf("Invalid option '-x %s' provided."+
-					"  Please correct your configuration.", os.Args[i1])
+					"  Please correct your configuration.", os.Args[i])
 				os.Exit(1)
-			} else {
-				args = append(args, kubernetesArgs...)
-				scheduler = &os.Args[i1]
-				i += 2
 			}
+			args = append(args, kubernetesArgs...)
+			scheduler = &os.Args[i]
+		case "--help", "-h":
+			usage()
 		case "--debug":
 			debugsOn = true
 			fallthrough
@@ -713,7 +751,7 @@ func main() {
 		logrus.Warnf("Scheduler not specified - adding `-x kubernetes` to the parameters")
 		args = append(args, kubernetesArgs...)
 	}
-	logrus.Infof("Updated arguments: %q", args)
+	logrus.Infof("Updated arguments: %v", args)
 	os.Args = args // reset to [potentially] trimmed down version
 
 	if debugsOn || os.Getenv("DEBUG") != "" { // Debugs on?
@@ -737,17 +775,18 @@ func main() {
 		}
 	}
 
-	ociService = utils.NewOciServiceControl(hostProcMount, baseServiceName)
-	ociRestServer = utils.NewRESTServlet(ociService)
-
-	logrus.Info("Activating REST server")
-	ociRestServer.Start()
-
-	meNode, err := utils.FindMyNode()
+	var err error
+	meNode, err = utils.FindMyNode()
 	if err != nil || meNode == nil {
 		logrus.Errorf("Could not find my node in Kubernetes cluster: %s", err)
 		os.Exit(1)
 	}
+
+	ociService = utils.NewOciServiceControl(hostProcMount, baseServiceName)
+	ociRestServer = utils.NewRESTServlet(ociService, meNode)
+
+	logrus.Info("Activating REST server")
+	ociRestServer.Start(optRestEndpoint)
 
 	lastOp := "Install"
 	if utils.IsPxDisabled(meNode) {

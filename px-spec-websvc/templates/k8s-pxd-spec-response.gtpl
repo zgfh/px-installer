@@ -443,7 +443,7 @@ rules:
   verbs: ["watch", "get", "update", "list"]
 - apiGroups: [""]
   resources: ["pods"]
-  verbs: ["get", "list"]
+  verbs: ["delete", "get", "list"]
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
   verbs: ["get", "list"]
