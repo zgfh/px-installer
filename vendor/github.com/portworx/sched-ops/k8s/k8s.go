@@ -92,8 +92,9 @@ type NodeOps interface {
 	CordonNode(nodeName string) error
 	// UnCordonNode uncordons the given node
 	UnCordonNode(nodeName string) error
-	// DrainPodsFromNode drains given pods from given node
-	DrainPodsFromNode(nodeName string, pods []v1.Pod) error
+	// DrainPodsFromNode drains given pods from given node. If timeout is set to
+	// a non-zero value, it waits for timeout duration for each pod to get deleted
+	DrainPodsFromNode(nodeName string, pods []v1.Pod, timeout time.Duration) error
 }
 
 // ServiceOps is an interface to perform k8s service operations
@@ -159,13 +160,15 @@ type PodOps interface {
 	// GetPodsUsingVolumePluginByNodeName returns all pods who use PVCs provided by the given volume plugin
 	GetPodsUsingVolumePluginByNodeName(nodeName, plugin string) ([]v1.Pod, error)
 	// GetPodByUID returns pod with the given UID, or error if nothing found
-	GetPodByUID(string, string) (*v1.Pod, error)
+	GetPodByUID(types.UID, string) (*v1.Pod, error)
 	// DeletePods deletes the given pods
 	DeletePods([]v1.Pod) error
 	// IsPodRunning checks if all containers in a pod are in running state
 	IsPodRunning(v1.Pod) bool
 	// IsPodBeingManaged returns true if the pod is being managed by a controller
 	IsPodBeingManaged(v1.Pod) bool
+	// WaitForPodDeletion waits for given timeout for given pod to be deleted
+	WaitForPodDeletion(uid types.UID, namespace string, timeout time.Duration) error
 }
 
 // StorageClassOps is an interface to perform k8s storage class operations
@@ -585,7 +588,7 @@ func (k *k8sOps) UnCordonNode(nodeName string) error {
 	return nil
 }
 
-func (k *k8sOps) DrainPodsFromNode(nodeName string, pods []v1.Pod) error {
+func (k *k8sOps) DrainPodsFromNode(nodeName string, pods []v1.Pod, timeout time.Duration) error {
 	err := k.CordonNode(nodeName)
 	if err != nil {
 		return err
@@ -597,6 +600,44 @@ func (k *k8sOps) DrainPodsFromNode(nodeName string, pods []v1.Pod) error {
 		if e != nil {
 			log.Printf("failed to uncordon node: %s", nodeName)
 		}
+		return err
+	}
+
+	if timeout > 0 {
+		for _, p := range pods {
+			err = k.WaitForPodDeletion(p.UID, p.Namespace, timeout)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+func (k *k8sOps) WaitForPodDeletion(uid types.UID, namespace string, timeout time.Duration) error {
+	t := func() (interface{}, bool, error) {
+		if err := k.initK8sClient(); err != nil {
+			return nil, true, err
+		}
+
+		p, err := k.GetPodByUID(uid, namespace)
+		if err != nil {
+			if err == ErrPodsNotFound {
+				return nil, false, nil
+			}
+
+			return nil, true, err
+		}
+
+		if p != nil {
+			return nil, true, fmt.Errorf("pod %s:%s (%s) still present in the system", namespace, p.Name, uid)
+		}
+
+		return nil, false, nil
+	}
+
+	if _, err := task.DoRetryWithTimeout(t, timeout, 5*time.Second); err != nil {
 		return err
 	}
 
@@ -1039,12 +1080,10 @@ func (k *k8sOps) DeletePods(pods []v1.Pod) error {
 		return err
 	}
 
-	var gracePeriod int64
-	gracePeriod = 0
-
+	deletePolicy := meta_v1.DeletePropagationForeground
 	for _, pod := range pods {
 		if err := k.client.CoreV1().Pods(pod.Namespace).Delete(pod.Name, &meta_v1.DeleteOptions{
-			GracePeriodSeconds: &gracePeriod,
+			PropagationPolicy: &deletePolicy,
 		}); err != nil {
 			return err
 		}
@@ -1117,7 +1156,7 @@ func (k *k8sOps) GetPodsUsingVolumePluginByNodeName(nodeName, plugin string) ([]
 	return retList, nil
 }
 
-func (k *k8sOps) GetPodByUID(uid string, namespace string) (*v1.Pod, error) {
+func (k *k8sOps) GetPodByUID(uid types.UID, namespace string) (*v1.Pod, error) {
 	pods, err := k.GetPods(namespace)
 	if err != nil {
 		return nil, err

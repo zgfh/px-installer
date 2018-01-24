@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/portworx/sched-ops/k8s"
 	"github.com/sirupsen/logrus"
@@ -127,7 +128,7 @@ func DrainPxVolumeConsumerPods(n *v1.Node, drainAllPxDepPods bool) error {
 	// ELSE len(pods) > 0 ... we have extra work to do
 
 	podNames = podsListToString(pods)
-	err = k8si.DrainPodsFromNode(n.GetName(), pods)
+	err = k8si.DrainPodsFromNode(n.GetName(), pods, 5*time.Minute)
 	if err != nil {
 		logrus.WithError(err).WithField("pods", podNames).Warnf("Failed to drain PX volume consumer pods")
 		err = fmt.Errorf("Failed to drain pods: %s", err)
