@@ -147,11 +147,6 @@ rules:
 - apiGroups: [""]
   resources: ["persistentvolumeclaims"]
   verbs: ["get", "list"]
-{{- if .Csi}}
-- apiGroups: ["storage.k8s.io"]
-  resources: ["volumeattachments"]
-  verbs: ["get", "list", "watch", "update"]
-{{- end}}
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/{{.RbacAuthVer}}
@@ -317,13 +312,13 @@ spec:
             - "--csi-address=$(ADDRESS)"
           env:
             - name: ADDRESS
-              value: /csi/plugins/com.openstorage.pxd/csi.sock
+              value: /csi/csi.sock
             - name: KUBE_NODE_NAME
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
           volumeMounts:
-            - name: kubelet
+            - name: csi-driver-path
               mountPath: /csi
         {{- end}}
       restartPolicy: Always
@@ -340,6 +335,12 @@ spec:
         - name: kubelet
           hostPath:
             path: {{if .Openshift}}/var/lib/origin/openshift.local.volumes{{else}}/var/lib/kubelet{{end}}
+        {{- if .Csi}}
+        - name: csi-driver-path
+          hostPath:
+            path: /var/lib/kubelet/plugins/com.openstorage.pxd
+            type: DirectoryOrCreate
+        {{- end}}
         - name: libosd
           hostPath:
             path: /var/lib/osd
