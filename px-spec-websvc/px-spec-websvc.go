@@ -222,6 +222,11 @@ func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
 		return nil, fmt.Errorf("Could not decode form: %s", err)
 	}
 
+	// Enable stork by default
+	if q := r.URL.Query(); q.Get("stork") == "" {
+		config.StartStork = true
+	}
+
 	log.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
 
 	return config, nil
