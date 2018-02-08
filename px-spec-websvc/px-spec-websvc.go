@@ -23,9 +23,12 @@ const (
 	templateVersion = "v2"
 	httpProtocolHdr = "X-Forwarded-Proto"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
-	pxImagePrefix  = "portworx/px-enterprise"
-	ociImagePrefix = "portworx/oci-monitor"
-	defaultPXTAG   = "1.2.12.1"
+	pxImagePrefix        = "portworx/px-enterprise"
+	ociImagePrefix       = "portworx/oci-monitor"
+	defaultTalismanImage = "portworx/talisman"
+	defaultTalismanTag   = "latest"
+	defaultPXTAG         = "1.2.16"
+	defaultOCIMonTag     = "1.3.0-rc4"
 )
 
 var (
@@ -36,8 +39,8 @@ var (
 	kbVerRegex = regexp.MustCompile(`^[v\s]*(\d+\.\d+\.\d+)(.*)*`)
 )
 
-// Params contains all parameters passed to us via HTTP.
-type Params struct {
+// InstallParams contains all parameters passed to us via HTTP.
+type InstallParams struct {
 	Type           string `schema:"type"   deprecated:"installType"`
 	Cluster        string `schema:"c"      deprecated:"cluster"`
 	Kvdb           string `schema:"k"      deprecated:"kvdb"`
@@ -69,6 +72,18 @@ type Params struct {
 	StartStork     bool   `schema:"stork"  deprecated:"stork"`
 }
 
+// UpgradeParams contains all parameters passed via HTTP for talisman spec
+type UpgradeParams struct {
+	OCIMonImage   string `schema:"ociMonImage"`
+	OCIMonTag     string `schema:"ociMonTag"`
+	PXImage       string `schema:"pxImage"`
+	PXTag         string `schema:"pxTag"`
+	TalismanImage string `schema:"talismanImage"`
+	TalismanTag   string `schema:"talismanTag"`
+	KubeVer       string `schema:"kbver"         deprecated:"k8sVersion"`
+	RbacAuthVer   string `schema:"-"             deprecated:"-"`
+}
+
 func splitCsv(in string) ([]string, error) {
 	r := csv.NewReader(strings.NewReader(in))
 	r.TrimLeadingSpace = true
@@ -81,8 +96,40 @@ func splitCsv(in string) ([]string, error) {
 	return records[0], err
 }
 
-func generate(templateFile string, p *Params) (string, error) {
+func generateUpgradeSpec(templateFile string, p *UpgradeParams) (string, error) {
+	cwd, _ := os.Getwd()
+	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
+	if err != nil {
+		return "", err
+	}
 
+	if len(p.TalismanImage) == 0 {
+		p.TalismanImage = defaultTalismanImage
+	}
+
+	if len(p.TalismanTag) == 0 {
+		p.TalismanTag = defaultTalismanTag
+	}
+
+	if len(p.OCIMonTag) == 0 {
+		p.OCIMonTag = defaultOCIMonTag
+	}
+
+	p.KubeVer, p.RbacAuthVer, _, err = parseKubeVer(p.KubeVer)
+	if err != nil {
+		return "", err
+	}
+
+	var result bytes.Buffer
+	err = t.Execute(&result, p)
+	if err != nil {
+		return "", err
+	}
+
+	return result.String(), nil
+}
+
+func generateInstallSpec(templateFile string, p *InstallParams) (string, error) {
 	cwd, _ := os.Getwd()
 	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
 	if err != nil {
@@ -147,37 +194,14 @@ func generate(templateFile string, p *Params) (string, error) {
 	p.NeedController = (p.Openshift == "true")
 	isGKE := false
 
-	p.KubeVer = strings.TrimSpace(p.KubeVer)
-	if len(p.KubeVer) > 1 { // parse the actual k8s version stripping out unnecessary parts
-		matches := kbVerRegex.FindStringSubmatch(p.KubeVer)
-		if len(matches) > 1 {
-			p.KubeVer = matches[1]
-			isGKE = strings.HasPrefix(matches[2], "-gke.")
-		} else {
-			return "", fmt.Errorf("Invalid Kubernetes version %q."+
-				"Please resubmit with a valid kubernetes version (e.g 1.7.8, 1.8.3)", p.KubeVer)
-		}
+	p.KubeVer, p.RbacAuthVer, isGKE, err = parseKubeVer(p.KubeVer)
+	if err != nil {
+		return "", err
 	}
 
-	// Fix up RbacAuthZ version.
-	// * [1.8 docs] https://kubernetes.io/docs/admin/authorization/rbac "As of 1.8, RBAC mode is stable and backed by the rbac.authorization.k8s.io/v1 API"
-	// * [1.7 docs] https://v1-7.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.7 RBAC mode is in beta"
-	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in alpha"
-	if p.KubeVer == "" || strings.HasPrefix(p.KubeVer, "1.7.") {
-		// current Kubernetes default is v1.7.x
-		p.RbacAuthVer = vB1
-	} else if p.KubeVer < "1.7." {
-		p.RbacAuthVer = vA1
-	} else {
-		p.RbacAuthVer = "v1"
-	}
-
-	// GKE (Google Container Engine) extensions - turn on the PVC-Controller, also override v1alphav1 AuthZ which doesn't work on GKE
+	// GKE (Google Container Engine) extensions - turn on the PVC-Controller
 	if isGKE {
 		p.NeedController = true
-		if p.RbacAuthVer == vA1 {
-			p.RbacAuthVer = vB1
-		}
 	}
 
 	// select PX-Image
@@ -198,14 +222,52 @@ func generate(templateFile string, p *Params) (string, error) {
 	return result.String(), nil
 }
 
-// parseRequest uses Gorilla schema to process parameters (see http://www.gorillatoolkit.org/pkg/schema)
-func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
+func parseKubeVer(ver string) (string, string, bool, error) {
+	ver = strings.TrimSpace(ver)
+	rbacAuthVer := ""
+	isGKE := false
+
+	if len(ver) > 1 { // parse the actual k8s version stripping out unnecessary parts
+		matches := kbVerRegex.FindStringSubmatch(ver)
+		if len(matches) > 1 {
+			ver = matches[1]
+			isGKE = strings.HasPrefix(matches[2], "-gke.")
+		} else {
+			return "", "", false, fmt.Errorf("Invalid Kubernetes version %q."+
+				"Please resubmit with a valid kubernetes version (e.g 1.7.8, 1.8.3)", ver)
+		}
+	}
+
+	// Fix up RbacAuthZ version.
+	// * [1.8 docs] https://kubernetes.io/docs/admin/authorization/rbac "As of 1.8, RBAC mode is stable and backed by the rbac.authorization.k8s.io/v1 API"
+	// * [1.7 docs] https://v1-7.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.7 RBAC mode is in beta"
+	// * [1.6 docs] https://v1-6.docs.kubernetes.io/docs/admin/authorization/rbac "As of 1.6 RBAC mode is in alpha"
+	if ver == "" || strings.HasPrefix(ver, "1.7.") {
+		// current Kubernetes default is v1.7.x
+		rbacAuthVer = vB1
+	} else if ver < "1.7." {
+		rbacAuthVer = vA1
+	} else {
+		rbacAuthVer = "v1"
+	}
+
+	// GKE (Google Container Engine) extensions - override v1alphav1 AuthZ which doesn't work on GKE
+	if isGKE {
+		if rbacAuthVer == vA1 {
+			rbacAuthVer = vB1
+		}
+	}
+	return ver, rbacAuthVer, isGKE, nil
+}
+
+// parseInstallRequest uses Gorilla schema to process parameters (see http://www.gorillatoolkit.org/pkg/schema)
+func parseInstallRequest(r *http.Request, parseStrict bool) (*InstallParams, error) {
 	err := r.ParseForm()
 	if err != nil {
 		return nil, fmt.Errorf("Could not parse form: %s", err)
 	}
 
-	config := new(Params)
+	config := new(InstallParams)
 	decoder := schema.NewDecoder()
 
 	if q := r.URL.Query(); q != nil && "" != q.Get("cluster") && "" != q.Get("kvdb") {
@@ -233,6 +295,30 @@ func parseRequest(r *http.Request, parseStrict bool) (*Params, error) {
 	return config, nil
 }
 
+func parseUpgradeRequest(r *http.Request, parseStrict bool) (*UpgradeParams, error) {
+	err := r.ParseForm()
+	if err != nil {
+		return nil, fmt.Errorf("Could not parse form: %s", err)
+	}
+
+	config := new(UpgradeParams)
+	decoder := schema.NewDecoder()
+
+	if !parseStrict {
+		// skip unknown keys, unless strict parsing
+		decoder.IgnoreUnknownKeys(true)
+	}
+
+	err = decoder.Decode(config, r.Form)
+	if err != nil {
+		return nil, fmt.Errorf("Could not decode form: %s", err)
+	}
+
+	log.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
+
+	return config, nil
+}
+
 // sendError sends back the "400 BAD REQUEST" to the client
 func sendError(code int, err error, w http.ResponseWriter) {
 	e := "Unspecified error"
@@ -247,8 +333,8 @@ func sendError(code int, err error, w http.ResponseWriter) {
 	w.Write([]byte(e))
 }
 
-// sendUsage sends a simple HTML usage-file back to the browser
-func sendUsage(w http.ResponseWriter) {
+// sendInstallUsage sends a simple HTML usage-file back to the browser
+func sendInstallUsage(w http.ResponseWriter) {
 	cwd, _ := os.Getwd()
 	fname := filepath.Join(cwd, "usage.html")
 	st, err := os.Stat(fname)
@@ -277,20 +363,15 @@ func main() {
 		PXTAG = defaultPXTAG
 	}
 
-	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
-		p, err := parseRequest(r, parseStrict)
+	http.HandleFunc("/upgrade", func(w http.ResponseWriter, r *http.Request) {
+		p, err := parseUpgradeRequest(r, parseStrict)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
 		}
 
-		p.Master = ""
-		template := "k8s-flexvol-pxd-spec-response.gtpl"
-		if len(p.ZeroStorage) != 0 {
-			template = "k8s-flexvol-master-worker-response.gtpl"
-		}
-
-		content, err := generate(template, p)
+		template := "k8s-px-upgrade.gtpl"
+		content, err := generateUpgradeSpec(template, p)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
@@ -301,11 +382,11 @@ func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// anything to parse?
 		if r.ContentLength == 0 && len(r.URL.RawQuery) == 0 {
-			sendUsage(w)
+			sendInstallUsage(w)
 			return
 		}
 
-		p, err := parseRequest(r, parseStrict)
+		p, err := parseInstallRequest(r, parseStrict)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
@@ -328,7 +409,7 @@ func main() {
 			template = "k8s-master-worker-response.gtpl"
 		}
 
-		content, err := generate(template, p)
+		content, err := generateInstallSpec(template, p)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
