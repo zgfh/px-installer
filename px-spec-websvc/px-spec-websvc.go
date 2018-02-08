@@ -59,6 +59,7 @@ type Params struct {
 	Openshift      string `schema:"osft"   deprecated:"openshift"`
 	PxImage        string `schema:"px"     deprecated:"pximage"`
 	SecretType     string `schema:"st"     deprecated:"secretType"`
+	JournalDev     string `schema:"j"      deprecated:"journalDev"`
 	MasterLess     bool   `schema:"-"      deprecated:"-"`
 	IsRunC         bool   `schema:"-"      deprecated:"-"`
 	TmplVer        string `schema:"-"      deprecated:"-"`
