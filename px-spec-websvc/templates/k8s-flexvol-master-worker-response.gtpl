@@ -64,7 +64,6 @@ spec:
              "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
              "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
              "{{if .Token}}-t {{.Token}}{{end}}",
-             {{- if .JournalDev}}"-j", "{{.JournalDev}}",{{end}}
              "-x", "kubernetes", "-z"]
           env:
             - name: "PX_TEMPLATE_VERSION"
@@ -185,7 +184,6 @@ spec:
              "{{if .EtcdKey}}-key {{.EtcdKey}}{{end}}",
              "{{if .Acltoken}}-acltoken {{.Acltoken}}{{end}}",
              "{{if .Token}}-t {{.Token}}{{end}}",
-             {{- if .JournalDev}}"-j", "{{.JournalDev}}",{{end}}
              "-x", "kubernetes"]
           env:
             - name: "PX_TEMPLATE_VERSION"
