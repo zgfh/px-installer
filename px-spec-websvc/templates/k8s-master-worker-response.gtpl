@@ -11,11 +11,13 @@ data:
       "kind": "Policy",
       "apiVersion": "v1",
       "predicates": [
+{{- if lt .KubeVer "1.9.z"}}
+        {"name": "NoVolumeZoneConflict"},
+{{- end}}
         {"name": "MaxAzureDiskVolumeCount"},
         {"name": "NoVolumeNodeConflict"},
         {"name": "PodToleratesNodeTaints"},
         {"name": "CheckNodeMemoryPressure"},
-        {"name": "NoVolumeZoneConflict"},
         {"name": "MaxEBSVolumeCount"},
         {"name": "MaxGCEPDVolumeCount"},
         {"name": "MatchInterPodAffinity"},
@@ -266,6 +268,7 @@ spec:
         - --leader-elect=true
         - --scheduler-name=stork
         - --policy-configmap=stork-config
+        - --policy-configmap-namespace=kube-system
         - --lock-object-name=stork-scheduler
         {{- if .Coreos}}
         image: quay.io/coreos/hyperkube:v{{- if .KubeVer}}{{.KubeVer}}{{- else}}1.8.4_coreos.1{{- end}}
