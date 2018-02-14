@@ -4,6 +4,26 @@ TALISMAN_IMAGE=portworx/talisman
 SCALE_DOWN_SHARED_APPS_MODE=auto
 OPERATION=upgrade
 
+usage()
+{
+  echo "
+  usage: [ -op <upgrade|restoresharedapps> -t <new oci tag> --scaledownsharedapps <auto|on|off> ]
+  examples:
+            # (Default for no arguments) Upgrade Portworx using default image ($OCI_MON_IMAGE:$OCI_MON_TAG)
+
+            # Upgrade Portworx but disable scaling down of Portworx shared applications
+            --scaledownsharedapps off
+
+            # Upgrade Portworx using oci monitor tag 1.3.0-rc5
+            -t 1.3.0-rc5
+
+            # Restore shared Portworx applications back to their original replica counts in situation where previous upgrade job failed to restore them
+            -op restoresharedapps
+       "
+  exit
+}
+
+
 while [ "$1" != "" ]; do
     case $1 in
         -i | --ocimonimage )    shift
@@ -23,6 +43,8 @@ while [ "$1" != "" ]; do
                                 ;;
         -tt | --talismantag )   shift
                                 TALISMAN_TAG=$1
+                                ;;
+        -h | --help )           usage
                                 ;;
         * )                     shift
                                 echo "unsupported argument: $1"
