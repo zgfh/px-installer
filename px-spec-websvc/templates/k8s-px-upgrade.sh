@@ -43,15 +43,15 @@ VER=( ${VER//./ } )
 echo "Parsed version is "${VER[0]}.${VER[1]}""
 
 if [ "${VER[0]}.${VER[1]}" == "1.6" ]; then
-	RBAC_VER="v1alpha1"
-	SUBJECTS_API_VER="apiVersion: v1"
-	TALISMAN_DEFAULT_TAG="1.6"
+  RBAC_VER="v1alpha1"
+  SUBJECTS_API_VER="apiVersion: v1"
+  TALISMAN_DEFAULT_TAG="1.6"
 elif [ "${VER[0]}.${VER[1]}" == "1.7" ]; then
-	RBAC_VER="v1beta1"
-	TALISMAN_DEFAULT_TAG="1.7"
+  RBAC_VER="v1beta1"
+  TALISMAN_DEFAULT_TAG="1.7"
 else # 1.8 and greater
   RBAC_VER="v1"
-	JOB_BACKOFF="backoffLimit: 1"
+  JOB_BACKOFF="backoffLimit: 1"
   TALISMAN_DEFAULT_TAG=latest
 fi
 
