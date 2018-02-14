@@ -72,18 +72,6 @@ type InstallParams struct {
 	StartStork     bool   `schema:"stork"  deprecated:"stork"`
 }
 
-// UpgradeParams contains all parameters passed via HTTP for talisman spec
-type UpgradeParams struct {
-	OCIMonImage   string `schema:"ociMonImage"`
-	OCIMonTag     string `schema:"ociMonTag"`
-	PXImage       string `schema:"pxImage"`
-	PXTag         string `schema:"pxTag"`
-	TalismanImage string `schema:"talismanImage"`
-	TalismanTag   string `schema:"talismanTag"`
-	KubeVer       string `schema:"kbver"         deprecated:"k8sVersion"`
-	RbacAuthVer   string `schema:"-"             deprecated:"-"`
-}
-
 func splitCsv(in string) ([]string, error) {
 	r := csv.NewReader(strings.NewReader(in))
 	r.TrimLeadingSpace = true
@@ -96,32 +84,15 @@ func splitCsv(in string) ([]string, error) {
 	return records[0], err
 }
 
-func generateUpgradeSpec(templateFile string, p *UpgradeParams) (string, error) {
+func generateUpgradeScript(templateFile string) (string, error) {
 	cwd, _ := os.Getwd()
 	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
 	if err != nil {
 		return "", err
 	}
 
-	if len(p.TalismanImage) == 0 {
-		p.TalismanImage = defaultTalismanImage
-	}
-
-	if len(p.TalismanTag) == 0 {
-		p.TalismanTag = defaultTalismanTag
-	}
-
-	if len(p.OCIMonTag) == 0 {
-		p.OCIMonTag = defaultOCIMonTag
-	}
-
-	p.KubeVer, p.RbacAuthVer, _, err = parseKubeVer(p.KubeVer)
-	if err != nil {
-		return "", err
-	}
-
 	var result bytes.Buffer
-	err = t.Execute(&result, p)
+	err = t.Execute(&result, nil)
 	if err != nil {
 		return "", err
 	}
@@ -295,30 +266,6 @@ func parseInstallRequest(r *http.Request, parseStrict bool) (*InstallParams, err
 	return config, nil
 }
 
-func parseUpgradeRequest(r *http.Request, parseStrict bool) (*UpgradeParams, error) {
-	err := r.ParseForm()
-	if err != nil {
-		return nil, fmt.Errorf("Could not parse form: %s", err)
-	}
-
-	config := new(UpgradeParams)
-	decoder := schema.NewDecoder()
-
-	if !parseStrict {
-		// skip unknown keys, unless strict parsing
-		decoder.IgnoreUnknownKeys(true)
-	}
-
-	err = decoder.Decode(config, r.Form)
-	if err != nil {
-		return nil, fmt.Errorf("Could not decode form: %s", err)
-	}
-
-	log.Printf("FROM %v PARSED %+v\n", r.RemoteAddr, config)
-
-	return config, nil
-}
-
 // sendError sends back the "400 BAD REQUEST" to the client
 func sendError(code int, err error, w http.ResponseWriter) {
 	e := "Unspecified error"
@@ -364,14 +311,8 @@ func main() {
 	}
 
 	http.HandleFunc("/upgrade", func(w http.ResponseWriter, r *http.Request) {
-		p, err := parseUpgradeRequest(r, parseStrict)
-		if err != nil {
-			sendError(http.StatusBadRequest, err, w)
-			return
-		}
-
-		template := "k8s-px-upgrade.gtpl"
-		content, err := generateUpgradeSpec(template, p)
+		template := "k8s-px-upgrade.sh"
+		content, err := generateUpgradeScript(template)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
