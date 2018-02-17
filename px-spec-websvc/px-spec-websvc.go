@@ -25,7 +25,7 @@ const (
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix  = "portworx/px-enterprise"
 	ociImagePrefix = "portworx/oci-monitor"
-	defaultPXTAG   = "1.2.14"
+	defaultPXTAG   = "1.2.18"
 )
 
 var (
@@ -34,6 +34,8 @@ var (
 	PXTAG string
 	// kbVerRegex matches "1.7.9+coreos.0", "1.7.6+a08f5eeb62", "v1.7.6+a08f5eeb62", "1.7.6", "v1.6.11-gke.0"
 	kbVerRegex = regexp.MustCompile(`^[v\s]*(\d+\.\d+\.\d+)(.*)*`)
+	// templateRoot is the root directory where templates reside
+	templateRoot string
 )
 
 // Params contains all parameters passed to us via HTTP.
@@ -68,6 +70,10 @@ type Params struct {
 	StartStork     bool   `schema:"stork"  deprecated:"stork"`
 }
 
+type InstallParams struct {
+	PxVer string
+}
+
 func splitCsv(in string) ([]string, error) {
 	r := csv.NewReader(strings.NewReader(in))
 	r.TrimLeadingSpace = true
@@ -80,10 +86,11 @@ func splitCsv(in string) ([]string, error) {
 	return records[0], err
 }
 
+// generate parses the template, and expands the template vars
 func generate(templateFile string, p *Params) (string, error) {
 
-	cwd, _ := os.Getwd()
-	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
+	// TODO: Template objects are reuseable - no need to read+parse w/ every request
+	t, err := template.ParseFiles(filepath.Join(templateRoot, templateFile))
 	if err != nil {
 		return "", err
 	}
@@ -269,11 +276,36 @@ func sendUsage(w http.ResponseWriter) {
 	}
 }
 
+func renderBootstrapScript(w http.ResponseWriter, r *http.Request) {
+	// TODO: Template objects are reuseable - no need to read+parse w/ every request
+	t, err := template.ParseFiles(filepath.Join(templateRoot, "px-install.sh.tmpl"))
+	if err != nil {
+		sendError(http.StatusInternalServerError, err, w)
+	}
+
+	p := &InstallParams{
+		PxVer: PXTAG,
+	}
+	var result bytes.Buffer
+	err = t.Execute(&result, p)
+	if err != nil {
+		sendError(http.StatusBadRequest, err, w)
+	}
+	io.WriteString(w, result.String())
+}
+
 func main() {
 	parseStrict := len(os.Args) > 1 && os.Args[1] == "-strict"
 
 	if PXTAG == "" {
 		PXTAG = defaultPXTAG
+	}
+
+	var err error
+	templateRoot, err = os.Getwd()
+	if err != nil {
+		log.Printf("ERROR: Could not determine current directory: %s", err)
+		os.Exit(1)
 	}
 
 	http.HandleFunc("/kube1.5", func(w http.ResponseWriter, r *http.Request) {
@@ -294,7 +326,7 @@ func main() {
 			sendError(http.StatusBadRequest, err, w)
 			return
 		}
-		fmt.Fprintf(w, content)
+		io.WriteString(w, content)
 	})
 
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
@@ -332,8 +364,12 @@ func main() {
 			sendError(http.StatusBadRequest, err, w)
 			return
 		}
-		fmt.Fprintf(w, content)
+		io.WriteString(w, content)
 	})
+
+	// Handler for "get.portworx.com"
+	http.HandleFunc("get.portworx.com/", renderBootstrapScript)
+	http.HandleFunc("get.portworx.com:8080/", renderBootstrapScript)
 
 	log.Printf("Serving at 0.0.0.0:8080")
 	log.Fatal(http.ListenAndServe(":8080", nil))
