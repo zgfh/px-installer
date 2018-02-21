@@ -40,6 +40,9 @@ ask() {
 
   # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
   read reply </dev/tty
+  if [ $? -ne 0 ]; then
+    fatal "ERROR: Could not ask for user input - please run via interactive shell"
+  fi
 
   # Default? (e.g user presses enter)
   if [ -z "$reply" ]; then
