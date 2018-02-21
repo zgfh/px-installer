@@ -7,7 +7,7 @@ OPERATION=upgrade
 usage()
 {
   echo "
-  usage: [ -op <upgrade|restoresharedapps> -t <new oci tag> --scaledownsharedapps <auto|on|off> ]
+  usage: [ [-o|--operation] <upgrade|restoresharedapps> [-t|--ocimontag] <new oci tag> --scaledownsharedapps <auto|on|off> ]
   examples:
             # (Default for no arguments) Upgrade Portworx using default image ($OCI_MON_IMAGE:$OCI_MON_TAG)
 
@@ -18,7 +18,7 @@ usage()
             -t 1.3.0-rc5
 
             # Restore shared Portworx applications back to their original replica counts in situation where previous upgrade job failed to restore them
-            -op restoresharedapps
+            -o restoresharedapps
        "
   exit
 }
@@ -35,13 +35,13 @@ while [ "$1" != "" ]; do
         --scaledownsharedapps ) shift
                                 SCALE_DOWN_SHARED_APPS_MODE=$1
                                 ;;
-        -ti | --talismanimage ) shift
+        -I | --talismanimage )  shift
                                 TALISMAN_IMAGE=$1
                                 ;;
-        -op | --operation )     shift
+        -o | --operation )      shift
                                 OPERATION=$1
                                 ;;
-        -tt | --talismantag )   shift
+        -T | --talismantag )   shift
                                 TALISMAN_TAG=$1
                                 ;;
         -h | --help )           usage
@@ -60,40 +60,39 @@ fatal() {
 
 # derived from https://gist.github.com/davejamesmiller/1965569
 ask() {
-    # https://djm.me/ask
-    local prompt default reply
+  # https://djm.me/ask
+  local prompt default reply
+  if [ "${2:-}" = "Y" ]; then
+    prompt="Y/n"
+    default=Y
+  elif [ "${2:-}" = "N" ]; then
+    prompt="y/N"
+    default=N
+  else
+    prompt="y/n"
+    default=
+  fi
 
-    while true; do
+  # Ask the question (not using "read -p" as it uses stderr not stdout)<Paste>
+  echo -n "$1 [$prompt]:"
 
-        if [ "${2:-}" = "Y" ]; then
-            prompt="Y/n"
-            default=Y
-        elif [ "${2:-}" = "N" ]; then
-            prompt="y/N"
-            default=N
-        else
-            prompt="y/n"
-            default=
-        fi
+  # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
+  read reply </dev/tty
+  if [ $? -ne 0 ]; then
+    fatal "ERROR: Could not ask for user input - please run via interactive shell"
+  fi
 
-        # Ask the question (not using "read -p" as it uses stderr not stdout)
-        echo -n "$1 [$prompt] "
+  # Default? (e.g user presses enter)
+  if [ -z "$reply" ]; then
+    reply=$default
+  fi
 
-        # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
-        read reply </dev/tty
-
-        # Default?
-        if [ -z "$reply" ]; then
-            reply=$default
-        fi
-
-        # Check if the reply is valid
-        case "$reply" in
-            Y*|y*) return 0 ;;
-            N*|n*) return 1 ;;
-        esac
-
-    done
+  # Check if the reply is valid
+  case "$reply" in
+    Y*|y*) return 0 ;;
+    N*|n*) return 1 ;;
+    * )    echo "invalid reply: $reply"; return 1 ;;
+  esac
 }
 
 if [ "$OPERATION" == "upgrade" ]; then
