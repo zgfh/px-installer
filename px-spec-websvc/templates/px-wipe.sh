@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 TALISMAN_IMAGE=portworx/talisman
 TALISMAN_TAG=latest
@@ -7,10 +7,10 @@ WIPE_CLUSTER="--wipecluster"
 usage()
 {
 	echo "
-	usage:  curl https://install.portworx.com/px-wipe | sh -s [-- [S | --skipmetadata] ]
+	usage:  curl https://install.portworx.com/px-wipe | bash -s [-- [-S | --skipmetadata] ]
 	examples:
             # Along with deleting Portworx Kubernetes components, also wipe Portworx cluster metadata
-            curl https://install.portworx.com/px-wipe | sh -s -- --skipmetadata
+            curl https://install.portworx.com/px-wipe | bash -s -- --skipmetadata
       "
 }
 
