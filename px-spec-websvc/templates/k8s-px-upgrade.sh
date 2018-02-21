@@ -7,7 +7,7 @@ OPERATION=upgrade
 usage()
 {
   echo "
-  usage: [ [-o|--operation] <upgrade|restoresharedapps> [-t|--ocimontag] <new oci tag> --scaledownsharedapps <auto|on|off> ]
+  usage: [ [-O|--operation] <upgrade|restoresharedapps> [-t|--ocimontag] <new oci tag> --scaledownsharedapps <auto|on|off> ]
   examples:
             # (Default for no arguments) Upgrade Portworx using default image ($OCI_MON_IMAGE:$OCI_MON_TAG)
 
@@ -18,7 +18,7 @@ usage()
             -t 1.3.0-rc5
 
             # Restore shared Portworx applications back to their original replica counts in situation where previous upgrade job failed to restore them
-            -o restoresharedapps
+            -O restoresharedapps
        "
   exit
 }
@@ -38,7 +38,7 @@ while [ "$1" != "" ]; do
         -I | --talismanimage )  shift
                                 TALISMAN_IMAGE=$1
                                 ;;
-        -o | --operation )      shift
+        -O | --operation )      shift
                                 OPERATION=$1
                                 ;;
         -T | --talismantag )   shift
