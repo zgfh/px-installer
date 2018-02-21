@@ -89,6 +89,9 @@ if [ -z "$VER" ]; then
 	fatal "failed to get kubernetes version. Make sure you have kubectl setup on current machine."
 fi
 
+VER=( ${VER//./ } )
+echo "Parsed version is "${VER[0]}.${VER[1]}""
+
 if [ "${VER[0]}.${VER[1]}" == "1.7" ] || [ "${VER[0]}.${VER[1]}" == "1.6" ]; then
   fatal "This script doesn't support wiping Portworx from Kubernetes $VER clusters. Refer to https://docs.portworx.com/scheduler/kubernetes/install.html for instructions"
 fi
