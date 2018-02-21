@@ -320,6 +320,16 @@ func main() {
 		fmt.Fprintf(w, content)
 	})
 
+	http.HandleFunc("/px-wipe", func(w http.ResponseWriter, r *http.Request) {
+		template := "px-wipe.sh"
+		content, err := generateUpgradeScript(template)
+		if err != nil {
+			sendError(http.StatusBadRequest, err, w)
+			return
+		}
+		fmt.Fprintf(w, content)
+	})
+
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		// anything to parse?
 		if r.ContentLength == 0 && len(r.URL.RawQuery) == 0 {
