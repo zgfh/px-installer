@@ -50,7 +50,7 @@ ask() {
   case "$reply" in
     Y*|y*) return 0 ;;
     N*|n*) return 1 ;;
-    * )    echo "invalid reply: $reply"; return 0 ;;
+    * )    echo "invalid reply: $reply"; return 1 ;;
   esac
 }
 
