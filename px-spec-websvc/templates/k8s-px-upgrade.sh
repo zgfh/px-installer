@@ -7,7 +7,7 @@ OPERATION=upgrade
 usage()
 {
   echo "
-  usage: [ -op <upgrade|restoresharedapps> -t <new oci tag> --scaledownsharedapps <auto|on|off> ]
+  usage: [ [-O|--operation] <upgrade|restoresharedapps> [-t|--ocimontag] <new oci tag> --scaledownsharedapps <auto|on|off> ]
   examples:
             # (Default for no arguments) Upgrade Portworx using default image ($OCI_MON_IMAGE:$OCI_MON_TAG)
 
@@ -18,7 +18,7 @@ usage()
             -t 1.3.0-rc5
 
             # Restore shared Portworx applications back to their original replica counts in situation where previous upgrade job failed to restore them
-            -op restoresharedapps
+            -O restoresharedapps
        "
   exit
 }
@@ -35,28 +35,84 @@ while [ "$1" != "" ]; do
         --scaledownsharedapps ) shift
                                 SCALE_DOWN_SHARED_APPS_MODE=$1
                                 ;;
-        -ti | --talismanimage ) shift
+        -I | --talismanimage )  shift
                                 TALISMAN_IMAGE=$1
                                 ;;
-        -op | --operation )     shift
+        -O | --operation )      shift
                                 OPERATION=$1
                                 ;;
-        -tt | --talismantag )   shift
+        -T | --talismantag )   shift
                                 TALISMAN_TAG=$1
                                 ;;
         -h | --help )           usage
                                 ;;
         * )                     shift
-                                echo "unsupported argument: $1"
-                                exit 1
+                                fatal "unsupported argument: $1"
     esac
     shift
 done
 
+fatal() {
+  echo "" 2>&1
+  echo "$@" 2>&1
+  exit 1
+}
+
+# derived from https://gist.github.com/davejamesmiller/1965569
+ask() {
+  # https://djm.me/ask
+  local prompt default reply
+  if [ "${2:-}" = "Y" ]; then
+    prompt="Y/n"
+    default=Y
+  elif [ "${2:-}" = "N" ]; then
+    prompt="y/N"
+    default=N
+  else
+    prompt="y/n"
+    default=
+  fi
+
+  # Ask the question (not using "read -p" as it uses stderr not stdout)<Paste>
+  echo -n "$1 [$prompt]:"
+
+  # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
+  read reply </dev/tty
+  if [ $? -ne 0 ]; then
+    fatal "ERROR: Could not ask for user input - please run via interactive shell"
+  fi
+
+  # Default? (e.g user presses enter)
+  if [ -z "$reply" ]; then
+    reply=$default
+  fi
+
+  # Check if the reply is valid
+  case "$reply" in
+    Y*|y*) return 0 ;;
+    N*|n*) return 1 ;;
+    * )    echo "invalid reply: $reply"; return 1 ;;
+  esac
+}
+
+if [ "$OPERATION" == "upgrade" ]; then
+  if ! ask "The operation will upgrade Portworx to $OCI_MON_IMAGE:$OCI_MON_TAG. Do you want to continue?" N; then
+    fatal "Aborting $OPERATION..."
+  fi
+fi
+
+command -v oc
+if [ $? -eq 0 ]; then
+  echo "Detected openshift system. Adding talisman-account user to privileged scc"
+  oc adm policy add-scc-to-user privileged system:serviceaccount:kube-system:talisman-account
+  if [ $? -ne 0 ]; then
+    fatal "failed to add talisman-account to privileged scc. exit code: $?"
+  fi
+fi
+
 VER=$(kubectl version --short | awk -Fv '/Server Version: /{print $3}')
 if [ -z "$VER" ]; then
-	echo "failed to get kubernetes version. Make sure you have kubectl setup on current machine."
-	exit $?
+	fatal "failed to get kubernetes version. Make sure you have kubectl setup on current machine."
 fi
 
 kubectl delete -n kube-system job talisman || true
