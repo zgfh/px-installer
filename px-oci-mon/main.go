@@ -31,7 +31,7 @@ const (
 	instScratchDir     = "/opt/pwx/oci/inst-scratchDir"
 	// pxImagePrefix will be combined w/ PXTAG to create the linked docker-image
 	pxImagePrefix = "portworx/px-enterprise"
-	defaultPXTAG  = "1.2.12.1"
+	defaultPXTAG  = "1.2.20.0"
 )
 
 var (

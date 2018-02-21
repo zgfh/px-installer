@@ -13,19 +13,18 @@ if [ $? -eq 0 ]; then
 fi
 
 # Colors
-Cgreen="$(tput setaf 2 2> /dev/null)"
-Cred="$(tput bold 2> /dev/null; tput setaf 1 2> /dev/null)"
-Cyello="$(tput bold 2> /dev/null; tput setaf 3 2> /dev/null)"
-Cnorm="$(tput sgr0 2> /dev/null)"
+Cg="$(tput setaf 2 2> /dev/null)"			  # NORMAL (green)
+Cr="$(tput bold 2> /dev/null; tput setaf 1 2> /dev/null)" # ERROR (red)
+Cy="$(tput bold 2> /dev/null; tput setaf 3 2> /dev/null)" # WARN (yellow)
+CR="$(tput sgr0 2> /dev/null)"				  # RESET
 
 usage() {
     cat << _EOF
-Usage: bootstrap-salt.sh [--oci|--docker|--plugin] [--upgrade] <px-options>
+Usage: bootstrap-px.sh [--oci|--docker] [--upgrade] <px-options>
 
 Options:
-    --oci      Installs Portworx as OCI Container
-    --docker   Installs Portworx as Docker container (plugin v1)
-    --plugin   Installs Portworx as Docker V2 plugin
+    --oci      Installs Portworx as OCI Container (defalt)
+    --docker   Installs Portworx as Docker container
 
     --upgrade  Upgrades existing Portworx OCI Container (OCI only option)
 
@@ -33,7 +32,8 @@ Options:
                Please see https://docs.portworx.com/runc/#options
 
 Example:
-    bootstrap-salt.sh -c MY_CLUSTER_ID -k etcd://myetc.company.com:2379 -s /dev/xvdb -s /dev/xvdc
+    curl -fsSL https://get.portworx.com | sh -s -- -k etcd://myetc.company.com:2379
+    curl -fsSL https://get.portworx.com | sh -s -- -c MY_CLUSTER_ID -k etcd://myetc.company.com:2379 -s /dev/xvdb -s /dev/xvdc
 
 _EOF
     exit 1
@@ -41,7 +41,7 @@ _EOF
 
 fatal() {
     echo "" 2>&1
-    echo "${Cred}$@${Cnorm}" 2>&1
+    echo "${Cr}$@${CR}" 2>&1
     echo "Please try reinstalling again - if the problem persists, please contact support@portworx.com" 2>&1
     exit 1
 }
@@ -49,72 +49,85 @@ fatal() {
 pxopts=''
 xtravols=''
 opt_upgrade=''
-opt_img=''
-# INSTALL TYPES: 0 = OCI, 1 = Docker, 2 = Plugin
+opt_img='portworx/px-enterprise:{{.PxVer}}'
+# INSTALL TYPES: 0 = OCI, 1 = Docker
 opt_type=0
-typeName='OCI Container'
+typeName='OCI container'
 
 while [ "$1" != "" ]; do
     case $1 in
-        [-]*oci)   opt_type=0; typeName='OCI Container' ;;
-        [-]*dock*) opt_type=1; typeName='Docker Container' ;;
-        [-]*plug*) opt_type=2; typeName='Docker V2 Plugin' ;;
+        [-]*oci)   opt_type=0; typeName='OCI container' ;;
+        [-]*dock*) opt_type=1; typeName='Docker container' ;;
         [-]*upg*)  opt_upgrade='--upgrade' ;;
         [-]*px)    opt_img="$2"; shift ;;
         -h|--help) usage ;;
-        [-]*debug) ;;
-        -v)        xtravols="$xtravols -v '$2'"; shift ;;
-        *)         pxopts="$pxopts '$1'" ;;
+        [-]*debug) ;;		# skip, already handled
+        -v)        xtravols="$xtravols -v $2"; shift ;;
+        *)         pxopts="$pxopts $1" ;;
     esac
     shift
 done
 
-echo "${Cgreen}Installing Portworx as $typeName ...${Cnorm}"
+# Check storage
+echo "$pxopts" | grep -qw -- -s
+if [ $? -ne 0 ]; then
+    echo "$pxopts" | grep -qw -- -z
+    if [ $? -ne 0 ]; then
+        echo "${Cy}WARN: No storage devices specified via \"-s /dev/xxx\", will search for any available storage.${CR}"
+        pxopts="$pxopts -a"
+    fi
+fi
+
+# Check ClusterID
+echo "$pxopts" | grep -qw -- -c
+if [ $? -ne 0 ]; then
+    cid="$(printf '%s-%x-%x\n' $(hostname -s) $(date +'%s %N') | tr '[:upper:]' '[:lower:]')"
+    echo "${Cy}WARN: No ClusterID specified via \"-c MY_CLUSTER_ID\", will use $cid.${CR}"
+    pxopts="$pxopts -c $cid"
+fi
+
+echo "${Cg}Installing Portworx as $typeName ...${CR}"
 
 if [ $opt_type -eq 1 ]; then    # install Docker Container
-    opt_img=${opt_img:-portworx/px-enterprise:{{.PxVer}}}
+    echo "${Cg}Step 1/3 : Stopping/Disabling old Portworx containers ...${CR}"
+    x=$(sudo /bin/sh -c "docker rm -f portworx; systemctl stop portworx; systemctl disable portworx" 2>&1)
+
+    echo "${Cg}Step 2/3 : Downloading Portworx Docker container ...${CR}"
+    sudo docker pull "$opt_img" \
+    || fatal "Error downloading Portworx Docker container!"
+
+    echo "${Cg}Step 3/3 : Starting Portworx Docker container ...${CR}"
+    [ -d /usr/src ]     && xtravols="-v /usr/src:/usr/src"
+    [ -d /lib/modules ] && xtravols="-v /lib/modules:/lib/modules"
     sudo docker run --restart=always --name portworx -d --net=host --privileged=true \
         -v /run/docker/plugins:/run/docker/plugins -v /var/lib/osd:/var/lib/osd:shared \
         -v /dev:/dev -v /etc/pwx:/etc/pwx -v /opt/pwx/bin:/export_bin \
         -v /var/run/docker.sock:/var/run/docker.sock -v /var/cores:/var/cores \
-        -v /usr/src:/usr/src $xtravols --ipc=host \
-        $opt_img $opt_debug $pxopts
-    if [ $? -ne 0 ]; then
-        fatal "Error downloading/installing Portworx Docker Container!"
-    fi
+        $xtravols --ipc=host "$opt_img" $opt_debug $pxopts \
+    || fatal "Error starting Portworx Docker container!"
 
-elif [ $opt_type -eq 2 ]; then  # install Docker V2 Plugin
-    if [ "x$xtravols" != x ]; then
-        echo "${Cyello}WARNING: Specifying extra volumes with V2 plugin is not supported (ignoring: $xtravols).${Cnorm}"
-    fi
-    sudo mkdir -p /etc/pwx /opt/pwx/bin /var/lib/osd /var/cores
-    opt_img=${opt_img:-portworx/px:{{.PxVer}}}
-    sudo docker plugin install --grant-all-permissions --alias pxd $opt_img "opts=$pxopts"
-    if [ $? -ne 0 ]; then
-        fatal "Error downloading/installing Portworx Docker V2 plugin!"
-    fi
+else                            # install OCI Container
+    echo "${Cg}Step 1/5 : Stopping/Disabling old Portworx containers ...${CR}"
+    x=$(sudo /bin/sh -c "docker rm -f portworx; systemctl stop portworx; systemctl disable portworx" 2>&1)
 
-else    # install OCI Container
-    echo "${Cgreen}:1/3: Downloading/Installing Portworx OCI bits ...${Cnorm}"
-    opt_img=${opt_img:-portworx/px-enterprise:{{.PxVer}}}
+    echo "${Cg}Step 2/5 : Downloading Portworx OCI ...${CR}"
+    sudo docker pull "$opt_img" \
+    || fatal "Error downloading Portworx OCI!"
+
+    echo "${Cg}Step 3/5 : Installing Portworx OCI files ...${CR}"
     sudo docker run --entrypoint /runc-entry-point.sh --rm -i --privileged=true \
-        -v /opt/pwx:/opt/pwx -v /etc/pwx:/etc/pwx $opt_img $opt_debug $opt_upgrade
-    if [ $? -ne 0 ]; then
-        fatal "Error downloading/installing Portworx OCI Container!"
-    fi
+        -v /opt/pwx:/opt/pwx -v /etc/pwx:/etc/pwx $opt_img $opt_debug $opt_upgrade \
+    || fatal "Error installing Portworx OCI Container files!"
 
-    echo "${Cgreen}:2/3: Configuring Portworx OCI ...${Cnorm}"
-    sudo /opt/pwx/bin/px-runc install $xtravols $pxopts
-    if [ $? -ne 0 ]; then
-        fatal "Error configuring Portworx OCI Container!"
-    fi
+    echo "${Cg}Step 4/5 : Configuring Portworx OCI ...${CR}"
+    sudo /opt/pwx/bin/px-runc install $xtravols $pxopts \
+    || fatal "Error configuring Portworx OCI Container!"
 
-    echo "${Cgreen}:3/3: Enabling/Restarting Portworx OCI service ...${Cnorm}"
+    echo "${Cg}Step 5/5 : Enabling/Restarting Portworx OCI service ...${CR}"
     sudo systemctl daemon-reload
-    sudo /bin/sh -c "systemctl enable portworx && systemctl restart portworx"
-    if [ $? -ne 0 ]; then
-        fatal "Error enabling/[re]starting Portworx OCI Container!"
-    fi
+    sudo /bin/sh -c "systemctl enable portworx && systemctl restart portworx" \
+    || fatal "Error enabling/[re]starting Portworx OCI service!"
 fi
 
-echo "${Cgreen}Done.${Cnorm}"
+echo "${Cg}Successfully installed Portworx $typeName.${CR}"
+
