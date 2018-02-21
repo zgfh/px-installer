@@ -1,4 +1,4 @@
-#!/bin/bash -e
+#!/bin/sh
 
 TALISMAN_IMAGE=portworx/talisman
 TALISMAN_TAG=latest
@@ -7,12 +7,11 @@ WIPE_CLUSTER="--wipecluster"
 usage()
 {
 	echo "
-	usage:  curl https://install.portworx.com/px-wipe | bash -s [-- --skipmetadata ]
+	usage:  curl https://install.portworx.com/px-wipe | sh -s [-- [S | --skipmetadata] ]
 	examples:
             # Along with deleting Portworx Kubernetes components, also wipe Portworx cluster metadata
-            curl https://install.portworx.com/px-wipe | bash -s -- --skipmetadata
+            curl https://install.portworx.com/px-wipe | sh -s -- --skipmetadata
       "
-	exit 1
 }
 
 fatal() {
@@ -23,51 +22,47 @@ fatal() {
 
 # derived from https://gist.github.com/davejamesmiller/1965569
 ask() {
-    # https://djm.me/ask
-    local prompt default reply
+  # https://djm.me/ask
+  local prompt default reply
+  if [ "${2:-}" = "Y" ]; then
+    prompt="Y/n"
+    default=Y
+  elif [ "${2:-}" = "N" ]; then
+    prompt="y/N"
+    default=N
+  else
+    prompt="y/n"
+    default=
+  fi
 
-    while true; do
+  # Ask the question (not using "read -p" as it uses stderr not stdout)<Paste>
+  echo "$1 [$prompt] "
 
-        if [ "${2:-}" = "Y" ]; then
-            prompt="Y/n"
-            default=Y
-        elif [ "${2:-}" = "N" ]; then
-            prompt="y/N"
-            default=N
-        else
-            prompt="y/n"
-            default=
-        fi
+  # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
+  read reply </dev/tty
 
-        # Ask the question (not using "read -p" as it uses stderr not stdout)
-        echo -n "$1 [$prompt] "
+  # Default? (e.g user presses enter)
+  if [ -z "$reply" ]; then
+    reply=$default
+  fi
 
-        # Read the answer (use /dev/tty in case stdin is redirected from somewhere else)
-        read reply </dev/tty
-
-        # Default?
-        if [ -z "$reply" ]; then
-            reply=$default
-        fi
-
-        # Check if the reply is valid
-        case "$reply" in
-            Y*|y*) return 0 ;;
-            N*|n*) return 1 ;;
-        esac
-
-    done
+  # Check if the reply is valid
+  case "$reply" in
+    Y*|y*) return 0 ;;
+    N*|n*) return 1 ;;
+    * )    echo "invalid reply: $reply"; return 0 ;;
+  esac
 }
 
 while [ "$1" != "" ]; do
     case $1 in
-        -ti | --talismanimage ) shift
+        -I | --talismanimage ) shift
                                 TALISMAN_IMAGE=$1
                                 ;;
-        -tt | --talismantag )   shift
+        -T | --talismantag )   shift
                                 TALISMAN_TAG=$1
                                 ;;
-        --skipmetadata )        WIPE_CLUSTER=""
+        -S | --skipmetadata )   WIPE_CLUSTER=""
                                 ;;
         -h | --help )           usage
                                 ;;
