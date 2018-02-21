@@ -84,6 +84,15 @@ else
   fi
 fi
 
+command -v oc
+if [ $? -eq 0 ]; then
+  echo "Detected openshift system. Adding talisman-account user to privileged scc"
+  oc adm policy add-scc-to-user privileged system:serviceaccount:kube-system:talisman-account
+  if [ $? -ne 0 ]; then
+    fatal "failed to add talisman-account to privileged scc. exit code: $?"
+  fi
+fi
+
 VER=$(kubectl version --short | awk -Fv '/Server Version: /{print $3}')
 if [ -z "$VER" ]; then
 	fatal "failed to get kubernetes version. Make sure you have kubectl setup on current machine."
