@@ -507,6 +507,11 @@ spec:
               {{- if .Openshift}}
               - key: openshift-infra
                 operator: Exists
+              - key: type
+                operator: In
+                values:
+                - "master"
+                - "infra"
               {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: Exists
@@ -665,6 +670,11 @@ spec:
               {{- if .Openshift}}
               - key: openshift-infra
                 operator: DoesNotExist
+              - key: type
+                operator: NotIn
+                values:
+                - "master"
+                - "infra"
               {{- else}}
               - key: node-role.kubernetes.io/master
                 operator: DoesNotExist
