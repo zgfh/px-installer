@@ -252,6 +252,9 @@
       } else if (el.type === "checkbox" && el.checked) {
         s += sep + el.name + "=true"
         sep = "&"
+      } else if (el.name == "stork" && el.type === "checkbox" && !el.checked) {
+        s += sep + el.name + "=false"
+        sep = "&"
       }
     }
     s = document.URL + s
