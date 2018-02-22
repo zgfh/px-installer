@@ -84,7 +84,7 @@ func splitCsv(in string) ([]string, error) {
 	return records[0], err
 }
 
-func generateUpgradeScript(templateFile string) (string, error) {
+func generateScript(templateFile string) (string, error) {
 	cwd, _ := os.Getwd()
 	t, err := template.ParseFiles(filepath.Join(cwd, templateFile))
 	if err != nil {
@@ -312,7 +312,7 @@ func main() {
 
 	http.HandleFunc("/upgrade", func(w http.ResponseWriter, r *http.Request) {
 		template := "k8s-px-upgrade.sh"
-		content, err := generateUpgradeScript(template)
+		content, err := generateScript(template)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
@@ -322,7 +322,23 @@ func main() {
 
 	http.HandleFunc("/px-wipe", func(w http.ResponseWriter, r *http.Request) {
 		template := "px-wipe.sh"
-		content, err := generateUpgradeScript(template)
+		content, err := generateScript(template)
+		if err != nil {
+			sendError(http.StatusBadRequest, err, w)
+			return
+		}
+		fmt.Fprintf(w, content)
+	})
+
+	http.HandleFunc("/precheck", func(w http.ResponseWriter, r *http.Request) {
+		template := "k8s-precheck.gtpl"
+		p, err := parseInstallRequest(r, parseStrict)
+		if err != nil {
+			sendError(http.StatusBadRequest, err, w)
+			return
+		}
+
+		content, err := generateInstallSpec(template, p)
 		if err != nil {
 			sendError(http.StatusBadRequest, err, w)
 			return
