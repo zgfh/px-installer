@@ -270,11 +270,7 @@ spec:
         - --policy-configmap=stork-config
         - --policy-configmap-namespace=kube-system
         - --lock-object-name=stork-scheduler
-        {{- if .Coreos}}
-        image: quay.io/coreos/hyperkube:v{{- if .KubeVer}}{{.KubeVer}}{{- else}}1.8.4_coreos.1{{- end}}
-        {{- else}}
         image: gcr.io/google_containers/kube-scheduler-amd64:v{{- if .KubeVer}}{{.KubeVer}}{{- else}}1.7.8{{- end}}
-        {{- end}}
         livenessProbe:
           httpGet:
             path: /healthz
