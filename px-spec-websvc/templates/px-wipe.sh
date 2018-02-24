@@ -3,7 +3,7 @@
 TALISMAN_IMAGE=portworx/talisman
 TALISMAN_TAG=latest
 WIPE_CLUSTER="--wipecluster"
-NUM_RETRIES=60
+MAX_RETRIES=60
 TIME_BEFORE_RETRY=5 #seconds
 JOB_NAME=talisman
 
@@ -111,21 +111,23 @@ fi
 kubectl delete -n kube-system job talisman 2>/dev/null || true
 
 RETRY_CNT=0
-PODS_EXIST=true
-until [ $RETRY_CNT -ge $NUM_RETRIES ]; do
-  NUM_PODS=$(kubectl get pods -n kube-system -l name=$JOB_NAME --show-all 2>/dev/null | grep -v NAME | wc -l)
-  if [ $NUM_PODS -eq 0 ]; then
-    PODS_EXIST=false
-    break
+while true; do
+  PODS=$(kubectl get pods -n kube-system -l name=$JOB_NAME --show-all 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    NUM_PODS=$(echo -n "$PODS" | grep -c -v NAME)
+    if [ $NUM_PODS -eq 0 ]; then
+      break
+    fi
   fi
 
-  RETRY_CNT=$[$RETRY_CNT+1]
+  RETRY_CNT=$((RETRY_CNT+1))
+  if [ $RETRY_CNT -ge $MAX_RETRIES ]; then
+    fatal "failed to delete old talisman pods"
+  fi
+
   sleep $TIME_BEFORE_RETRY
 done
 
-if $PODS_EXIST; then
-  fatal "failed to delete old talisman pods"
-fi
 
 cat <<EOF | kubectl apply -f -
 ---
@@ -180,43 +182,51 @@ echo "Talisman job for wiping Portworx started. Monitor logs using: 'kubectl log
 
 NUM_DESIRED=1
 RETRY_CNT=0
-PASS=false
-until [ $RETRY_CNT -ge $NUM_RETRIES ]; do
+while true; do
   NUM_SUCCEEDED=0
   NUM_FAILED=0
-  CREATING=$(kubectl get pods -n kube-system -l name=$JOB_NAME 2>/dev/null | grep ContainerCreating)
-  if [ ! -z "$CREATING" ]; then
-    echo "Pod that will perform wipe of Portworx is still in container creating phase"
-  else
-    NUM_FAILED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.failed}' 2>/dev/null)
-    if [ ! -z "$NUM_FAILED" ] && [ $NUM_FAILED -ge 1 ]; then
-      break
-    fi
-
-    NUM_SUCCEEDED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.succeeded}' 2>/dev/null)
-    if [ ! -z "$NUM_SUCCEEDED" ] && [ $NUM_SUCCEEDED -eq $NUM_DESIRED ]; then
-      PASS=true
-      break
+  PODS=$(kubectl get pods -n kube-system -l name=$JOB_NAME 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    CREATING=$(echo "$PODS" | grep ContainerCreating)
+    if [ ! -z "$CREATING" ]; then
+      echo "Pod that will perform wipe of Portworx is still in container creating phase"
     else
+      NUM_FAILED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.failed}' 2>/dev/null)
+      if [ $? -eq 0 ]; then
+        if [ ! -z "$NUM_FAILED" ] && [ $NUM_FAILED -ge 1 ]; then
+          kubectl logs -n kube-system -l name=$JOB_NAME
+          fatal "Job to wipe px cluster failed."
+        fi
+      fi
+
+      NUM_SUCCEEDED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.succeeded}' 2>/dev/null)
+      if [ ! -z "$NUM_SUCCEEDED" ] && [ $NUM_SUCCEEDED -eq $NUM_DESIRED ]; then
+        break
+      fi
+
       echo "waiting on $JOB_NAME to complete..."
-      POD=$(kubectl get pod -n kube-system -l name=$JOB_NAME 2>/dev/null | grep Running | awk '/^talisman/{print $1}')
-      if [ ! -z "$POD" ]; then
-        echo "Monitoring logs of pod: $POD"
-        kubectl logs -n kube-system -f $POD
+      RUNNING_POD=$(echo "$PODS" | grep Running | awk '/^talisman/{print $1}')
+      if [ ! -z "$RUNNING_POD" ]; then
+        echo "Monitoring logs of pod: $RUNNING_POD"
+        kubectl logs -n kube-system -f $RUNNING_POD
       fi
     fi
   fi
 
-  RETRY_CNT=$[$RETRY_CNT+1]
+  RETRY_CNT=$((RETRY_CNT+1))
+  if [ $RETRY_CNT -ge $MAX_RETRIES ]; then
+    kubectl logs -n kube-system -l name=$JOB_NAME
+    fatal "Timed out trying to wipe Portworx cluster."
+  fi
+
   sleep $TIME_BEFORE_RETRY
 done
 
-if $PASS ; then
-  echo "Portworx cluster wipe succesfully completed."
-  kubectl delete job -n kube-system talisman
-  kubectl delete serviceaccount -n kube-system talisman-account
-  kubectl delete clusterrolebinding talisman-role-binding
-else
-  kubectl logs -n kube-system -l name=$JOB_NAME
-  fatal "Failed to wipe Portworx cluster"
+echo "Portworx cluster wipe succesfully completed."
+_rc=0
+kubectl delete job -n kube-system talisman                    || _rc=$?
+kubectl delete serviceaccount -n kube-system talisman-account || _rc=$?
+kubectl delete clusterrolebinding talisman-role-binding       || _rc=$?
+if [ $_rc -ne 0 ]; then
+   fatal "error cleaning up pods"
 fi
