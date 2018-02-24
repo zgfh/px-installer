@@ -1,6 +1,6 @@
 #!/bin/bash -ex
 
-NUM_RETRIES=36
+MAX_RETRIES=36
 TIME_BEFORE_RETRY=5 #seconds
 DAEMONSET_NAME=px-pre-install-check
 
@@ -8,6 +8,18 @@ fatal() {
   echo "" 2>&1
   echo "$@" 2>&1
   exit 1
+}
+
+fatal_with_logs() {
+  echo "Pre-install check failed."
+  NOT_READY_PODS=$(kubectl get pods -n kube-system -l name=$DAEMONSET_NAME | grep -v 1/1 | awk '/^px-pre-install-check/{print $1}')
+  echo "Dumping logs of failed pods: $NOT_READY_PODS"
+  for pod in $NOT_READY_PODS; do
+    echo "Dumping logs of pod: $pod"
+    kubectl logs $pod -n kube-system
+  done
+
+  fatal $@
 }
 
 VER=$(kubectl version --short | awk -Fv '/Server Version: /{print $3}')
@@ -99,42 +111,50 @@ spec:
         hostPath:
           path: /etc/pwx
 _EOF
+if [ $? -ne 0 ]; then
+  fatal "Failed to create preflight check daemonset. exit code: $?"
+fi
 
 echo "Pre-flight check started. Use 'kubectl logs -n kube-system -l name=$DAEMONSET_NAME --tail=9999' to monitor the logs."
 
 NUM_DESIRED=$(kubectl get daemonset -n kube-system $DAEMONSET_NAME -o jsonpath='{.status.desiredNumberScheduled}')
+if [ $? -ne 0 ]; then
+  fatal "Failed to get details about preflight check daemonset: $DAEMONSET_NAME"
+fi
+
 echo "Number of desired replicas: $NUM_DESIRED."
 
 RETRY_CNT=0
-PASS=false
-until [ $RETRY_CNT -ge $NUM_RETRIES ]; do
-	NUM_READY=$(kubectl get daemonset -n kube-system $DAEMONSET_NAME -o jsonpath='{.status.numberReady}')
-  if [ $NUM_READY -eq $NUM_DESIRED ]; then
-    PASS=true
-    break
-  else
-    echo "Waiting for preflight check to pass. Current ready replicas: $NUM_READY Expected ready replicas: $NUM_DESIRED"
-    kubectl get pods -n kube-system -l name=$DAEMONSET_NAME -o wide
+while true; do
+  NUM_READY=$(kubectl get daemonset -n kube-system $DAEMONSET_NAME -o jsonpath='{.status.numberReady}')
+  if [ $? -ne 0 ]; then
+    fatal_with_logs "Failed to get details about preflight check daemonset: $DAEMONSET_NAME"
   fi
 
-  RETRY_CNT=$[$RETRY_CNT+1]
+  if [ $NUM_READY -eq $NUM_DESIRED ]; then
+    break
+  fi
+
+  echo "Waiting for preflight check to pass. Current ready replicas: $NUM_READY Expected ready replicas: $NUM_DESIRED"
+  kubectl get pods -n kube-system -l name=$DAEMONSET_NAME -o wide
+  if [ $? -ne 0 ]; then
+    fatal_with_logs "Failed to list pods for preflight check daemonset: $DAEMONSET_NAME"
+  fi
+
+  RETRY_CNT=$((RETRY_CNT+1))
+  if [ $RETRY_CNT -ge $MAX_RETRIES ]; then
+    fatal_with_logs "Timed out waiting for preflight check daemonset: $DAEMONSET_NAME to finish"
+  fi
+
   sleep $TIME_BEFORE_RETRY
 done
 
-if $PASS ; then
-  echo "Pre-install check passed on all nodes !"
-  kubectl get pods -n kube-system -l name=$DAEMONSET_NAME -o wide
-  kubectl logs -n kube-system -l name=$DAEMONSET_NAME --tail=9999
-  kubectl delete -n kube-system daemonset $DAEMONSET_NAME
-  kubectl delete -n kube-system serviceaccount px-pre-check-account
-else
-  echo "Pre-install check failed."
-  NOT_READY_PODS=$(kubectl get pods -n kube-system -l name=$DAEMONSET_NAME | grep -v 1/1 | awk '/^px-pre-install-check/{print $1}')
-  echo "Dumping logs of failed pods: $NOT_READY_PODS"
-  for pod in $NOT_READY_PODS; do
-    echo "Dumping logs of pod: $pod"
-    kubectl logs $pod -n kube-system
-  done
-
-  fatal
-fi
+echo "Pre-install check passed on all nodes !"
+_rc=0
+kubectl get pods -n kube-system -l name=$DAEMONSET_NAME -o wide   || _rc=$?
+kubectl logs -n kube-system -l name=$DAEMONSET_NAME --tail=9999   || _rc=$?
+kubectl delete -n kube-system daemonset $DAEMONSET_NAME           || _rc=$?
+kubectl delete -n kube-system serviceaccount px-pre-check-account || _rc=$?
+if [ $_rc -ne 0 ]; then
+   fatal "Failed to delete preflight check daemonset resources"
+ fi
