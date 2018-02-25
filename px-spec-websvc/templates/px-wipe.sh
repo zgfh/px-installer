@@ -3,6 +3,9 @@
 TALISMAN_IMAGE=portworx/talisman
 TALISMAN_TAG=latest
 WIPE_CLUSTER="--wipecluster"
+MAX_RETRIES=60
+TIME_BEFORE_RETRY=5 #seconds
+JOB_NAME=talisman
 
 usage()
 {
@@ -105,7 +108,26 @@ if [ "${VER[0]}.${VER[1]}" == "1.7" ] || [ "${VER[0]}.${VER[1]}" == "1.6" ]; the
   fatal "This script doesn't support wiping Portworx from Kubernetes $VER clusters. Refer to https://docs.portworx.com/scheduler/kubernetes/install.html for instructions"
 fi
 
-kubectl delete -n kube-system job talisman || true
+kubectl delete -n kube-system job talisman 2>/dev/null || true
+
+RETRY_CNT=0
+while true; do
+  PODS=$(kubectl get pods -n kube-system -l name=$JOB_NAME --show-all 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    NUM_PODS=$(echo -n "$PODS" | grep -c -v NAME)
+    if [ $NUM_PODS -eq 0 ]; then
+      break
+    fi
+  fi
+
+  RETRY_CNT=$((RETRY_CNT+1))
+  if [ $RETRY_CNT -ge $MAX_RETRIES ]; then
+    fatal "failed to delete old talisman pods"
+  fi
+
+  sleep $TIME_BEFORE_RETRY
+done
+
 
 cat <<EOF | kubectl apply -f -
 ---
@@ -132,15 +154,18 @@ roleRef:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: talisman
+  name: $JOB_NAME
   namespace: kube-system
 spec:
   backoffLimit: 1
   template:
+    metadata:
+      labels:
+        name: $JOB_NAME
     spec:
       serviceAccount: talisman-account
       containers:
-      - name: talisman
+      - name: $JOB_NAME
         image: $TALISMAN_IMAGE:$TALISMAN_TAG
         args: ["-operation",  "delete", "$WIPE_CLUSTER"]
         volumeMounts:
@@ -154,3 +179,54 @@ spec:
 EOF
 
 echo "Talisman job for wiping Portworx started. Monitor logs using: 'kubectl logs -n kube-system -l job-name=talisman'"
+
+NUM_DESIRED=1
+RETRY_CNT=0
+while true; do
+  NUM_SUCCEEDED=0
+  NUM_FAILED=0
+  PODS=$(kubectl get pods -n kube-system -l name=$JOB_NAME 2>/dev/null)
+  if [ $? -eq 0 ]; then
+    CREATING=$(echo "$PODS" | grep ContainerCreating)
+    if [ ! -z "$CREATING" ]; then
+      echo "Pod that will perform wipe of Portworx is still in container creating phase"
+    else
+      NUM_FAILED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.failed}' 2>/dev/null)
+      if [ $? -eq 0 ]; then
+        if [ ! -z "$NUM_FAILED" ] && [ $NUM_FAILED -ge 1 ]; then
+          kubectl logs -n kube-system -l name=$JOB_NAME
+          fatal "Job to wipe px cluster failed."
+        fi
+      fi
+
+      NUM_SUCCEEDED=$(kubectl get job -n kube-system talisman --show-all -o jsonpath='{.status.succeeded}' 2>/dev/null)
+      if [ ! -z "$NUM_SUCCEEDED" ] && [ $NUM_SUCCEEDED -eq $NUM_DESIRED ]; then
+        break
+      fi
+
+      echo "waiting on $JOB_NAME to complete..."
+      RUNNING_POD=$(echo "$PODS" | grep Running | awk '/^talisman/{print $1}')
+      if [ ! -z "$RUNNING_POD" ]; then
+        echo "Monitoring logs of pod: $RUNNING_POD"
+        kubectl logs -n kube-system -f $RUNNING_POD
+      fi
+    fi
+  fi
+
+  RETRY_CNT=$((RETRY_CNT+1))
+  if [ $RETRY_CNT -ge $MAX_RETRIES ]; then
+    kubectl logs -n kube-system -l name=$JOB_NAME
+    fatal "Timed out trying to wipe Portworx cluster."
+  fi
+
+  sleep $TIME_BEFORE_RETRY
+done
+
+echo "Portworx cluster wipe succesfully completed."
+_rc=0
+kubectl delete job -n kube-system talisman                    || _rc=$?
+kubectl delete serviceaccount -n kube-system talisman-account || _rc=$?
+kubectl delete clusterrolebinding talisman-role-binding       || _rc=$?
+if [ $_rc -ne 0 ]; then
+   fatal "error cleaning up pods"
+fi
